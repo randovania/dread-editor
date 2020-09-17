@@ -76,43 +76,22 @@ class DataTypeWindow:
     def __init__(self, address: int, data_type, title: str):
         self.title = title
         self.address = address
-        self.data_type = data_type
 
-        bridge.remote_exec("""
-def serialize_component(component):
-    component_name = component.getFieldName()
-    if component_name is None:
-        component_name = "<unknown>"
-
-    result = {
-        "offset": component.getOffset(),
-        "type_name": component.getDataType().getName(),
-        "length": component.getLength(),
-        "name": component_name,
-        "comment": component.getComment(),
-    }
-    if isinstance(component.getDataType(), ghidra.program.database.data.ArrayDB):
-        result["array_size"] = component.getDataType().getNumElements()
-        result["element_type"] = component.getDataType().getDataType()
-    else: 
-        result["array_size"] = 1
-        result["element_type"] = component.getDataType()
-    
-    result["element_size"] = result["element_type"].getLength()
-    result["is_pointer"] = isinstance(result["element_type"], ghidra.program.database.data.PointerDB)
-    result["is_struct"] = isinstance(result["element_type"], ghidra.program.database.data.StructureDB)
-    return result
-        """)
-        self.components = bridge.remote_eval("""
-        [
-            serialize_component(component)
-            for component in data_type.getComponents()
-            if component.getDataType().getName() != "undefined"
-        ]
+        result = bridge.remote_eval("""
+        {
+            "data_length": data_type.getLength(),
+            "components": [
+                serialize_component(component)
+                for component in data_type.getComponents()
+                if component.getDataType().getName() != "undefined"
+            ],
+        }
         """, data_type=data_type)
+        self.data_length = result["data_length"]
+        self.components = result["components"]
 
     def render(self):
-        memory = dolphin_memory_engine.read_bytes(self.address, self.data_type.length)
+        memory = dolphin_memory_engine.read_bytes(self.address, self.data_length)
         imgui.columns(4)
         for component in self.components:
             imgui.text(hex(component["offset"]))
@@ -168,8 +147,31 @@ def loop():
 
     io = imgui.get_io()
     io.display_size = size
-
     bridge.remote_exec("""
+def serialize_component(component):
+    component_name = component.getFieldName()
+    if component_name is None:
+        component_name = "<unknown>"
+
+    result = {
+        "offset": component.getOffset(),
+        "type_name": component.getDataType().getName(),
+        "length": component.getLength(),
+        "name": component_name,
+        "comment": component.getComment(),
+    }
+    if isinstance(component.getDataType(), ghidra.program.database.data.ArrayDB):
+        result["array_size"] = component.getDataType().getNumElements()
+        result["element_type"] = component.getDataType().getDataType()
+    else: 
+        result["array_size"] = 1
+        result["element_type"] = component.getDataType()
+
+    result["element_size"] = result["element_type"].getLength()
+    result["is_pointer"] = isinstance(result["element_type"], ghidra.program.database.data.PointerDB)
+    result["is_struct"] = isinstance(result["element_type"], ghidra.program.database.data.StructureDB)
+    return result
+    
 def get_symbol_type(symbol):
     data = getDataAt(symbol.getAddress())
     if data is not None:
@@ -208,7 +210,7 @@ def get_symbol_type(symbol):
 
                 imgui.end_menu()
 
-            if imgui.menu_item("Dolphin: Hooked" if dolphin_memory_engine.is_hooked() else "Dolphin: Try Hook"):
+            if imgui.menu_item("Dolphin: Hooked" if dolphin_memory_engine.is_hooked() else "Dolphin: Try Hook")[0]:
                 dolphin_memory_engine.hook()
             imgui.end_main_menu_bar()
 
