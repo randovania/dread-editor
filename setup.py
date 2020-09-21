@@ -1,11 +1,7 @@
 from setuptools import setup, find_packages
-from setuptools.command.build_py import build_py
-
 
 with open("README.md") as readme_file:
     long_description = readme_file.read()
-
-
 
 setup(
     name='retro-memory-viewer',
@@ -33,6 +29,7 @@ setup(
     ],
     install_requires=[
         'dolphin-memory-engine>=1.0.2',
+        'imgui[pygame]',
     ],
     extras_require={
     },

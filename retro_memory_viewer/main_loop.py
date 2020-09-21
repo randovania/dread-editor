@@ -1,7 +1,5 @@
-import json
 import sys
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Optional, List, Tuple
 
 import OpenGL.GL as gl
@@ -10,6 +8,8 @@ import ghidra_bridge
 import imgui
 import pygame
 from imgui.integrations.pygame import PygameRenderer
+
+from retro_memory_viewer.memory_backend import MemoryBackend, NullBackend, DolphinBackend, BytesBackend
 
 global_symbols = [
     {"name": "g_GameState", "type": "CGameState *", "address": 0x80418eb8},
@@ -20,6 +20,8 @@ bridge: ghidra_bridge.GhidraBridge
 
 windows = []
 data_types = {}
+
+memory_backend: MemoryBackend = NullBackend()
 
 
 @dataclass(frozen=True)
@@ -91,7 +93,7 @@ class DataTypeWindow:
         self.components = result["components"]
 
     def render(self):
-        memory = dolphin_memory_engine.read_bytes(self.address, self.data_length)
+        memory = memory_backend.read_bytes(self.address, self.data_length)
         imgui.columns(4)
         for component in self.components:
             imgui.text(hex(component["offset"]))
@@ -136,9 +138,17 @@ def open_type_window(address: int, data_type, name: str):
     windows.append(DataTypeWindow(real_address, data_type, f"{name} - {data_type.getName()} @ {hex(real_address)}"))
 
 
+def save_memory_to_file():
+    mem1 = memory_backend.read_bytes(BytesBackend.MEM1_START, BytesBackend.MEM1_SIZE)
+    with open("mem1.bin", "wb") as mem_file:
+        mem_file.write(mem1)
+
+
 def loop():
     pygame.init()
     size = 800, 600
+
+    global memory_backend
 
     pygame.display.set_mode(size, pygame.DOUBLEBUF | pygame.OPENGL | pygame.RESIZABLE)
 
@@ -196,6 +206,9 @@ def get_symbol_type(symbol):
 
             impl.process_event(event)
 
+        if not memory_backend.is_connected and not isinstance(memory_backend, NullBackend):
+            memory_backend = NullBackend()
+
         imgui.new_frame()
 
         if imgui.begin_main_menu_bar():
@@ -210,8 +223,24 @@ def get_symbol_type(symbol):
 
                 imgui.end_menu()
 
-            if imgui.menu_item("Dolphin: Hooked" if dolphin_memory_engine.is_hooked() else "Dolphin: Try Hook")[0]:
-                dolphin_memory_engine.hook()
+            if imgui.begin_menu(f"Memory: {memory_backend.name}", True):
+                if imgui.menu_item("Hook to Dolphin", enabled=not isinstance(memory_backend, DolphinBackend))[0]:
+                    dolphin_memory_engine.hook()
+                    if dolphin_memory_engine.is_hooked():
+                        memory_backend = DolphinBackend(dolphin_memory_engine)
+
+                if imgui.menu_item("Read from File", enabled=not isinstance(memory_backend, BytesBackend))[0]:
+                    try:
+                        with open("mem1.bin", "rb") as mem_file:
+                            memory_backend = BytesBackend(mem_file.read())
+                    except FileNotFoundError:
+                        pass
+
+                if imgui.menu_item("Save to File", enabled=memory_backend.is_connected)[0]:
+                    save_memory_to_file()
+
+                imgui.end_menu()
+
             imgui.end_main_menu_bar()
 
         # imgui.show_test_window()
