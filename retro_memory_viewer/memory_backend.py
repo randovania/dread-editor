@@ -86,7 +86,7 @@ class BytesBackend(MemoryBackend):
         real_console_address = console_address
 
         for offset in pointer_offsets:
-            memory_buffer = self.read_bytes(self._address_to_offset(real_console_address), 4)
+            memory_buffer = self.read_bytes(real_console_address, 4)
             real_console_address = struct.unpack(">L", memory_buffer)[0]
             self._check_valid_address(real_console_address)
             real_console_address += offset

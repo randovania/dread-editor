@@ -1,3 +1,4 @@
+import struct
 import sys
 from dataclasses import dataclass
 from typing import Optional, List, Tuple
@@ -110,16 +111,21 @@ class DataTypeWindow:
                     imgui.next_column()
 
                 base_address = component["offset"] + i * component["element_size"]
-                data_in_memory = memory[base_address:base_address + component["element_size"]]
                 if component["is_pointer"] or component["is_struct"]:
                     if component["is_pointer"]:
+                        data_in_memory = memory[base_address:base_address + component["element_size"]]
                         text_message = f"Open: 0x{data_in_memory.hex()}"
                     else:
                         text_message = f"Open##{component['offset']}"
                     if imgui.button(text_message):
                         open_type_window(self.address + base_address, component["element_type"], component["name"])
                 else:
-                    imgui.text(data_in_memory.hex())
+                    if component["type_name"] == "float":
+                        value = str(struct.unpack_from(">f", memory, base_address)[0])
+                    else:
+                        data_in_memory = memory[base_address:base_address + component["element_size"]]
+                        value = data_in_memory.hex()
+                    imgui.text(value)
                 imgui.next_column()
 
         imgui.columns(1)
@@ -133,7 +139,7 @@ def open_type_window(address: int, data_type, name: str):
         pointers.append(0)
         data_type = data_type.getDataType()
 
-    real_address = dolphin_memory_engine.follow_pointers(base_address, pointers)
+    real_address = memory_backend.follow_pointers(base_address, pointers)
 
     windows.append(DataTypeWindow(real_address, data_type, f"{name} - {data_type.getName()} @ {hex(real_address)}"))
 
@@ -224,17 +230,8 @@ def get_symbol_type(symbol):
                 imgui.end_menu()
 
             if imgui.begin_menu(f"Memory: {memory_backend.name}", True):
-                if imgui.menu_item("Hook to Dolphin", enabled=not isinstance(memory_backend, DolphinBackend))[0]:
-                    dolphin_memory_engine.hook()
-                    if dolphin_memory_engine.is_hooked():
-                        memory_backend = DolphinBackend(dolphin_memory_engine)
-
-                if imgui.menu_item("Read from File", enabled=not isinstance(memory_backend, BytesBackend))[0]:
-                    try:
-                        with open("mem1.bin", "rb") as mem_file:
-                            memory_backend = BytesBackend(mem_file.read())
-                    except FileNotFoundError:
-                        pass
+                if imgui.menu_item("Disconnect")[0]:
+                    memory_backend = NullBackend()
 
                 if imgui.menu_item("Save to File", enabled=memory_backend.is_connected)[0]:
                     save_memory_to_file()
@@ -243,29 +240,44 @@ def get_symbol_type(symbol):
 
             imgui.end_main_menu_bar()
 
-        # imgui.show_test_window()
+        imgui.show_test_window()
 
-        imgui.begin("Globals")
-        for symbol in main_symbols:
-            if symbol["type"] is None:
-                imgui.text(f"{symbol['name']} - No type")
-            else:
-                if imgui.button(f"{symbol['name']}##{symbol['address']}"):
-                    open_type_window(symbol["address"], symbol["type"], symbol['name'])
-        imgui.end()
-
-        windows_to_delete = []
-        for window in windows:
-            imgui.set_next_window_size(600, 400, imgui.ONCE)
-            expanded, opened = imgui.begin(window.title, True)
-            if expanded:
-                window.render()
-            if not opened:
-                windows_to_delete.append(window)
+        if memory_backend.is_connected:
+            imgui.begin("Globals")
+            for symbol in main_symbols:
+                if symbol["type"] is None:
+                    imgui.text(f"{symbol['name']} - No type")
+                else:
+                    if imgui.button(f"{symbol['name']}##{symbol['address']}"):
+                        open_type_window(symbol["address"], symbol["type"], symbol['name'])
             imgui.end()
 
-        for window in windows_to_delete:
-            windows.remove(window)
+            windows_to_delete = []
+            for window in windows:
+                imgui.set_next_window_size(600, 400, imgui.ONCE)
+                expanded, opened = imgui.begin(window.title, True)
+                if expanded:
+                    window.render()
+                if not opened:
+                    windows_to_delete.append(window)
+                imgui.end()
+
+            for window in windows_to_delete:
+                windows.remove(window)
+        else:
+            imgui.begin("Connect to...")
+            if imgui.button("Hook to Dolphin"):
+                dolphin_memory_engine.hook()
+                if dolphin_memory_engine.is_hooked():
+                    memory_backend = DolphinBackend(dolphin_memory_engine)
+
+            if imgui.button("Read from File"):
+                try:
+                    with open("mem1.bin", "rb") as mem_file:
+                        memory_backend = BytesBackend(mem_file.read())
+                except FileNotFoundError:
+                    pass
+            imgui.end()
 
         # note: cannot use screen.fill((1, 1, 1)) because pygame's screen
         #       does not support fill() on OpenGL sufraces
