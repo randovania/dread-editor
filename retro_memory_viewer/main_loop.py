@@ -1,7 +1,8 @@
+import json
 import struct
 import sys
-from dataclasses import dataclass
-from typing import Optional, List, Tuple
+from pathlib import Path
+from typing import Dict
 
 import OpenGL.GL as gl
 import dolphin_memory_engine
@@ -12,86 +13,18 @@ from imgui.integrations.pygame import PygameRenderer
 
 from retro_memory_viewer.memory_backend import MemoryBackend, NullBackend, DolphinBackend, BytesBackend
 
-global_symbols = [
-    {"name": "g_GameState", "type": "CGameState *", "address": 0x80418eb8},
-    {"name": "g_CStateManager", "type": "CStateManager", "address": 0x803db6e0},
-    {"name": "g_CSamusHud", "type": "CSamusHud *", "address": 0x803b1f30},
-]
-bridge: ghidra_bridge.GhidraBridge
-
 windows = []
-data_types = {}
 
 memory_backend: MemoryBackend = NullBackend()
-
-
-@dataclass(frozen=True)
-class DataTypeComponent:
-    offset: int
-    length: int
-    type: str
-    name: Optional[str]
-    comment: Optional[str]
-
-    @classmethod
-    def from_json(cls, data) -> "DataTypeComponent":
-        return DataTypeComponent(
-            data["offset"],
-            data["length"],
-            data["type"],
-            data["name"],
-            data["comment"],
-        )
-
-
-@dataclass(frozen=True)
-class DataType:
-    name: str
-    length: int
-    components: List[DataTypeComponent]
-
-    @classmethod
-    def from_json(cls, data) -> "DataType":
-        return DataType(
-            name=data["name"],
-            length=data["length"],
-            components=[
-                DataTypeComponent.from_json(component)
-                for component in data["components"]
-            ]
-        )
-
-
-def get_array_size(data_type: str) -> Tuple[str, int]:
-    if data_type[-1] != "]":
-        return data_type, 1
-
-    starting_bracket = data_type.rfind("[")
-    size = int(data_type[starting_bracket + 1:-1])
-    return data_type[:starting_bracket], size
-
-
-def is_array(data_type: str) -> bool:
-    return False
+all_types: Dict[str, dict] = {}
 
 
 class DataTypeWindow:
-    def __init__(self, address: int, data_type, title: str):
+    def __init__(self, address: int, data_type: dict, title: str):
         self.title = title
         self.address = address
-
-        result = bridge.remote_eval("""
-        {
-            "data_length": data_type.getLength(),
-            "components": [
-                serialize_component(component)
-                for component in data_type.getComponents()
-                if component.getDataType().getName() != "undefined"
-            ],
-        }
-        """, data_type=data_type)
-        self.data_length = result["data_length"]
-        self.components = result["components"]
+        self.data_length = data_type["data_length"]
+        self.components = data_type["components"]
 
     def render(self):
         memory = memory_backend.read_bytes(self.address, self.data_length)
@@ -131,17 +64,18 @@ class DataTypeWindow:
         imgui.columns(1)
 
 
-def open_type_window(address: int, data_type, name: str):
+def open_type_window(address: int, type_name: str, name: str):
     pointers = []
+    data_type = all_types[type_name]
 
     base_address = address
-    while isinstance(data_type, ghidra.program.database.data.PointerDB):
+    while "pointer" in data_type:
         pointers.append(0)
-        data_type = data_type.getDataType()
+        data_type = all_types[data_type["pointer"]]
 
     real_address = memory_backend.follow_pointers(base_address, pointers)
 
-    windows.append(DataTypeWindow(real_address, data_type, f"{name} - {data_type.getName()} @ {hex(real_address)}"))
+    windows.append(DataTypeWindow(real_address, data_type, f"{name} - {data_type['name']} @ {hex(real_address)}"))
 
 
 def save_memory_to_file():
@@ -150,20 +84,38 @@ def save_memory_to_file():
         mem_file.write(mem1)
 
 
-def loop():
-    pygame.init()
-    size = 800, 600
+def load_symbols_from_ghidra():
+    with ghidra_bridge.GhidraBridge(namespace=globals()) as bridge:
+        bridge.remote_exec("""
+all_types = {}
 
-    global memory_backend
+def serialize_type(data_type):
+    name = data_type.getName()
+    if name in all_types:
+        return name
+    all_types[name] = True
 
-    pygame.display.set_mode(size, pygame.DOUBLEBUF | pygame.OPENGL | pygame.RESIZABLE)
+    if isinstance(data_type, ghidra.program.database.data.PointerDB):
+        all_types[name] = {
+            "name": name,
+            "pointer": serialize_type(data_type.getDataType())
+        }
+    elif isinstance(data_type, ghidra.program.database.data.StructureDB):
+        all_types[name] = {
+            "name": name,
+            "data_length": data_type.getLength(),
+            "components": [
+                serialize_component(component)
+                for component in data_type.getComponents()
+                if component.getDataType().getName() != "undefined"
+            ],
+        }
+    else:
+        print(type(data_type))
 
-    imgui.create_context()
-    impl = PygameRenderer()
+    return name
 
-    io = imgui.get_io()
-    io.display_size = size
-    bridge.remote_exec("""
+
 def serialize_component(component):
     component_name = component.getFieldName()
     if component_name is None:
@@ -186,24 +138,66 @@ def serialize_component(component):
     result["element_size"] = result["element_type"].getLength()
     result["is_pointer"] = isinstance(result["element_type"], ghidra.program.database.data.PointerDB)
     result["is_struct"] = isinstance(result["element_type"], ghidra.program.database.data.StructureDB)
+    result["element_type"] = serialize_type(result["element_type"])
     return result
-    
+
 def get_symbol_type(symbol):
     data = getDataAt(symbol.getAddress())
     if data is not None:
-        return data.getDataType()
+        return serialize_type(data.getDataType())
     return None
     """)
-    main_symbols = bridge.remote_eval("""[
-        {
-            "name": symbol.getName(True),
-            "address": symbol.getAddress().getOffset(),
-            "type": get_symbol_type(symbol),
-        }
-        for symbol in currentProgram.getSymbolTable().getDefinedSymbols()
-        if symbol.getName().startswith("g_")
-    ]
-    """)
+        main_symbols = bridge.remote_eval("""[
+            {
+                "name": symbol.getName(True),
+                "address": symbol.getAddress().getOffset(),
+                "type": get_symbol_type(symbol),
+            }
+            for symbol in currentProgram.getSymbolTable().getDefinedSymbols()
+            if symbol.getName().startswith("g_")
+        ]
+        """)
+        ghidra_types = dict(sorted(bridge.remote_eval("all_types").items(), key=lambda k: k[0]))
+
+    return main_symbols, ghidra_types
+
+
+def save_symbols_to_file(main_symbols, all_data_types):
+    with open("symbols.json", "w") as symbols_file:
+        json.dump({
+            "main_symbols": main_symbols,
+            "all_types": all_data_types,
+        }, symbols_file)
+
+
+def load_symbols_from_file():
+    with open("symbols.json", "r") as symbols_file:
+        data = json.load(symbols_file)
+    return data["main_symbols"], data["all_types"]
+
+
+def loop():
+    pygame.init()
+    size = 800, 600
+
+    global memory_backend
+
+    pygame.display.set_mode(size, pygame.DOUBLEBUF | pygame.OPENGL | pygame.RESIZABLE)
+
+    imgui.create_context()
+    impl = PygameRenderer()
+
+    io = imgui.get_io()
+    io.display_size = size
+
+    global all_types
+    main_symbols = []
+
+    if Path("symbols.json").exists():
+        try:
+            main_symbols, all_types = load_symbols_from_file()
+        except json.JSONDecodeError:
+            pass
 
     while True:
         for event in pygame.event.get():
@@ -235,6 +229,18 @@ def get_symbol_type(symbol):
 
                 if imgui.menu_item("Save to File", enabled=memory_backend.is_connected)[0]:
                     save_memory_to_file()
+
+                imgui.end_menu()
+
+            if imgui.begin_menu(f"Symbols", True):
+                if imgui.menu_item("Load from File")[0]:
+                    main_symbols, all_types = load_symbols_from_file()
+
+                if imgui.menu_item("Load from Ghidra")[0]:
+                    main_symbols, all_types = load_symbols_from_ghidra()
+
+                if imgui.menu_item("Save to File")[0]:
+                    save_symbols_to_file(main_symbols, all_types)
 
                 imgui.end_menu()
 
@@ -290,7 +296,4 @@ def get_symbol_type(symbol):
 
 
 def main_loop():
-    global bridge
-    with ghidra_bridge.GhidraBridge(namespace=globals()) as gb:
-        bridge = gb
-        loop()
+    return loop()
