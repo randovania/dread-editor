@@ -246,7 +246,7 @@ def loop():
 
             imgui.end_main_menu_bar()
 
-        imgui.show_test_window()
+        # imgui.show_test_window()
 
         if memory_backend.is_connected:
             imgui.begin("Globals")
