@@ -95,10 +95,11 @@ class LevelData:
         self.brfld = brfld
         self.bmscc = bmscc
         self.visible_actors = {}
+        self.visible_layers = {layer_name: True for layer_name in brfld.all_layers()}
         self.valid_cameras = valid_cameras
         self.display_borders = display_borders
         self.render_scale = 500.0
-        self.h = 0
+        self.highlighted_actors_in_canvas = []
 
     @classmethod
     def open_file(cls, pkg_editor: PkgEditor, file_name: str):
@@ -147,18 +148,38 @@ class LevelData:
             r, g, b = colorsys.hsv_to_rgb(d, 1, 1)
             return [r, g, b, 1]
 
+        highlighted_actors_in_list = set()
+
         with imgui_util.with_group():
             imgui.text("Actor Layers")
             with imgui_util.with_child("##ActorLayers", 300 * current_scale, 0,
                                        imgui.WINDOW_ALWAYS_VERTICAL_SCROLLBAR):
+                imgui.columns(2, "actor layers")
+                imgui.set_column_width(-1, 20 * current_scale)
                 for layer_name in self.brfld.raw.Root.pScenario.rEntitiesLayer.dctSublayers:
+                    self.visible_layers[layer_name] = imgui.checkbox(f"##{layer_name}_visible",
+                                                                     self.visible_layers[layer_name])[1]
+                    imgui.next_column()
                     if imgui_util.colored_tree_node(layer_name, color_for_layer(layer_name)):
                         for actor_name, actor in self.brfld.actors_for_layer(layer_name).items():
                             key = (layer_name, actor_name)
-                            self.visible_actors[key] = imgui.checkbox(
-                                f"{actor_name} ##{layer_name}_{actor_name}", self.visible_actors.get(key)
-                            )[1]
+
+                            def do_item():
+                                self.visible_actors[key] = imgui.checkbox(
+                                    f"{actor_name} ##{layer_name}_{actor_name}", self.visible_actors.get(key)
+                                )[1]
+
+                            if (layer_name, actor) in self.highlighted_actors_in_canvas:
+                                with imgui.colored(imgui.COLOR_TEXT, 1, 1, 0.2):
+                                    do_item()
+                            else:
+                                do_item()
+
+                            if imgui.is_item_hovered():
+                                highlighted_actors_in_list.add(key)
                         imgui.tree_pop()
+                    imgui.next_column()
+                imgui.columns(1, "actor layers")
 
         imgui.same_line()
 
@@ -225,20 +246,27 @@ class LevelData:
                                            closed=True,
                                            thickness=3)
 
-            highlighted_actors = []
+            self.highlighted_actors_in_canvas = []
 
             for layer_name in self.brfld.all_layers():
+                if not self.visible_layers[layer_name]:
+                    continue
+
                 color = imgui.get_color_u32_rgba(*color_for_layer(layer_name))
                 for actor in self.brfld.actors_for_layer(layer_name).values():
                     final_x = lerp_x(actor.vPos[0])
                     final_y = lerp_y(actor.vPos[1])
-                    draw_list.add_circle_filled(final_x, final_y, 5, color)
-                    if (mouse.x - final_x) ** 2 + (mouse.y - final_y) ** 2 < 5 * 5:
-                        highlighted_actors.append((layer_name, actor))
+                    if (layer_name, actor.sName) in highlighted_actors_in_list:
+                        draw_list.add_circle_filled(final_x, final_y, 15, imgui.get_color_u32_rgba(1, 1, 1, 1))
+                    else:
+                        draw_list.add_circle_filled(final_x, final_y, 5, color)
 
-            if highlighted_actors:
+                    if (mouse.x - final_x) ** 2 + (mouse.y - final_y) ** 2 < 5 * 5:
+                        self.highlighted_actors_in_canvas.append((layer_name, actor))
+
+            if self.highlighted_actors_in_canvas:
                 imgui.begin_tooltip()
-                for layer_name, actor in highlighted_actors:
+                for layer_name, actor in self.highlighted_actors_in_canvas:
                     imgui.text(f"{layer_name} - {actor.sName}")
                 imgui.end_tooltip()
 
