@@ -1,5 +1,8 @@
+import colorsys
+import hashlib
 import json
 import os.path
+import struct
 import tkinter
 import tkinter.filedialog
 import typing
@@ -95,7 +98,7 @@ class LevelData:
         self.valid_cameras = valid_cameras
         self.display_borders = display_borders
         self.render_scale = 500.0
-        pass
+        self.h = 0
 
     @classmethod
     def open_file(cls, pkg_editor: PkgEditor, file_name: str):
@@ -131,19 +134,25 @@ class LevelData:
             self.visible_actors[(layer_name, actor.sName)] = True
 
     def render_window(self, current_scale):
-        imgui.set_next_window_size(900 * current_scale, 300 * current_scale, imgui.ONCE)
+        imgui.set_next_window_size(900 * current_scale, 300 * current_scale, imgui.FIRST_USE_EVER)
         expanded, opened = imgui.begin(os.path.basename(self.file_name), True)
 
         if not opened:
             imgui.end()
             return False
 
+        def color_for_layer(name: str):
+            d = hashlib.blake2b(name.encode("utf-8"), digest_size=4).digest()
+            d = struct.unpack("L", d)[0] / 0xFFFFFFFF
+            r, g, b = colorsys.hsv_to_rgb(d, 1, 1)
+            return [r, g, b, 1]
+
         with imgui_util.with_group():
             imgui.text("Actor Layers")
             with imgui_util.with_child("##ActorLayers", 300 * current_scale, 0,
                                        imgui.WINDOW_ALWAYS_VERTICAL_SCROLLBAR):
                 for layer_name in self.brfld.raw.Root.pScenario.rEntitiesLayer.dctSublayers:
-                    if imgui.tree_node(layer_name):
+                    if imgui_util.colored_tree_node(layer_name, color_for_layer(layer_name)):
                         for actor_name, actor in self.brfld.actors_for_layer(layer_name).items():
                             key = (layer_name, actor_name)
                             self.visible_actors[key] = imgui.checkbox(
@@ -218,17 +227,19 @@ class LevelData:
 
             highlighted_actors = []
 
-            for actor in self.brfld.actors_for_layer("default").values():
-                final_x = lerp_x(actor.vPos[0])
-                final_y = lerp_y(actor.vPos[1])
-                draw_list.add_circle_filled(final_x, final_y, 5, imgui.get_color_u32_rgba(1, 1, 0, 1))
-                if (mouse.x - final_x) ** 2 + (mouse.y - final_y) ** 2 < 4 * 4:
-                    highlighted_actors.append(actor)
+            for layer_name in self.brfld.all_layers():
+                color = imgui.get_color_u32_rgba(*color_for_layer(layer_name))
+                for actor in self.brfld.actors_for_layer(layer_name).values():
+                    final_x = lerp_x(actor.vPos[0])
+                    final_y = lerp_y(actor.vPos[1])
+                    draw_list.add_circle_filled(final_x, final_y, 5, color)
+                    if (mouse.x - final_x) ** 2 + (mouse.y - final_y) ** 2 < 5 * 5:
+                        highlighted_actors.append((layer_name, actor))
 
             if highlighted_actors:
                 imgui.begin_tooltip()
-                for actor in highlighted_actors:
-                    imgui.text(actor.sName)
+                for layer_name, actor in highlighted_actors:
+                    imgui.text(f"{layer_name} - {actor.sName}")
                 imgui.end_tooltip()
 
         imgui.end()
