@@ -1,7 +1,7 @@
 import re
 
 import imgui
-from mercury_engine_data_structures import dread_types
+from mercury_engine_data_structures import dread_data
 
 
 def render_bool(value):
@@ -92,10 +92,10 @@ def render_value_of_type(value, type_name: str, path: str):
     elif (m := find_ptr_match(type_name)) is not None:
         render_ptr_of_type(value, m.group(1), path)
 
-    elif type_name in dread_types.get():
+    elif type_name in dread_data.get_raw_types():
         def render_type(type_data):
             if type_data["parent"] is not None:
-                render_type(dread_types.get()[type_data["parent"]])
+                render_type(dread_data.get_raw_types()[type_data["parent"]])
 
             for field_name, field_type in type_data["fields"].items():
                 if field_name in value:
@@ -115,7 +115,7 @@ def render_value_of_type(value, type_name: str, path: str):
             imgui.text(f'Type: {value["@type"]}')
             imgui.next_column()
             imgui.next_column()
-        render_type(dread_types.get()[type_name])
+        render_type(dread_data.get_raw_types()[type_name])
 
     else:
         print(f"Unsupported render of type {type_name}")

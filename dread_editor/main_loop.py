@@ -14,7 +14,7 @@ import OpenGL.GL as gl
 import glfw
 import imgui
 from imgui.integrations.glfw import GlfwRenderer
-from mercury_engine_data_structures import hashed_names
+from mercury_engine_data_structures import dread_data
 from mercury_engine_data_structures.formats import Brfld, Brsa, Bmscc
 from mercury_engine_data_structures.game_check import Game
 from mercury_engine_data_structures.pkg_editor import PkgEditor
@@ -329,7 +329,7 @@ def loop():
             possible_brfld = [
                 name
                 for asset_id in pkg_editor.all_asset_ids()
-                if (name := hashed_names.name_for_asset_id(asset_id)) is not None
+                if (name := dread_data.name_for_asset_id(asset_id)) is not None
                    and name.endswith("brfld")
             ]
             possible_brfld.sort()
