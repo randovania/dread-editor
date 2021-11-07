@@ -1,6 +1,5 @@
 import json
 import os.path
-import re
 import tkinter
 import tkinter.filedialog
 import typing
@@ -12,15 +11,13 @@ import OpenGL.GL as gl
 import glfw
 import imgui
 from imgui.integrations.glfw import GlfwRenderer
-from mercury_engine_data_structures import hashed_names, dread_types
+from mercury_engine_data_structures import hashed_names
 from mercury_engine_data_structures.formats import Brfld, Brsa, Bmscc
 from mercury_engine_data_structures.game_check import Game
 from mercury_engine_data_structures.pkg_editor import PkgEditor
 
-current_brfld: Optional[Brfld] = None
-current_brsa: Optional[Brsa] = None
-current_bmscc: Optional[Bmscc] = None
-visible_actors: Dict[tuple[str, str], bool] = {}
+from dread_editor import type_render, imgui_util
+
 preferences: Dict[str, typing.Any] = {}
 preferences_file_path = Path(__file__).parent.joinpath("preferences.json")
 
@@ -88,136 +85,189 @@ def impl_glfw_init():
     return window
 
 
-def render_bool(value):
-    imgui.text(str(value))
+class LevelData:
+    def __init__(self, file_name: str, brfld: Brfld, bmscc: Bmscc, valid_cameras: dict[str, bool],
+                 display_borders: dict[str, float]):
+        self.file_name = file_name
+        self.brfld = brfld
+        self.bmscc = bmscc
+        self.visible_actors = {}
+        self.valid_cameras = valid_cameras
+        self.display_borders = display_borders
+        self.render_scale = 500.0
+        pass
+
+    @classmethod
+    def open_file(cls, pkg_editor: PkgEditor, file_name: str):
+        brfld = Brfld.parse(pkg_editor.get_asset_with_name(file_name), target_game=Game.DREAD)
+
+        valid_cameras = {
+            key: True
+            for key in sorted(get_subareas(pkg_editor, file_name))
+        }
+        bmscc = Bmscc.parse(pkg_editor.get_asset_with_name(
+            file_name.replace(".brfld", ".bmscc")),
+            target_game=Game.DREAD,
+        )
+
+        display_borders: dict[str, float] = {"left": 0, "right": 0, "top": 0, "bottom": 0}
+        for entry in bmscc.raw.layers[0].entries:
+            x1, y1, x2, y2 = entry.data.total_boundings
+            if abs(x1) > 59999 or abs(y1) > 59999 or abs(x2) > 59999 or abs(y2) > 59999:
+                if entry.name in valid_cameras:
+                    print(f"Removing {entry.name} as valid camera, boudings: {entry.data.total_boundings}")
+                    valid_cameras.pop(entry.name)
+                continue
+            display_borders["left"] = min(display_borders["left"], x1)
+            display_borders["bottom"] = min(display_borders["bottom"], y1)
+            display_borders["right"] = max(display_borders["right"], x2)
+            display_borders["top"] = max(display_borders["top"], y2)
+
+        return cls(file_name, brfld, bmscc, valid_cameras, display_borders)
+
+    def open_actor_link(self, link: str):
+        if (actor := self.brfld.follow_link(link)) is not None:
+            layer_name = link.split(":")[4]
+            self.visible_actors[(layer_name, actor.sName)] = True
+
+    def render_window(self, current_scale):
+        imgui.set_next_window_size(900 * current_scale, 300 * current_scale, imgui.ONCE)
+        expanded, opened = imgui.begin(os.path.basename(self.file_name), True)
+
+        if not opened:
+            imgui.end()
+            return False
+
+        with imgui_util.with_group():
+            imgui.text("Actor Layers")
+            with imgui_util.with_child("##ActorLayers", 300 * current_scale, 0,
+                                       imgui.WINDOW_ALWAYS_VERTICAL_SCROLLBAR):
+                for layer_name in self.brfld.raw.Root.pScenario.rEntitiesLayer.dctSublayers:
+                    if imgui.tree_node(layer_name):
+                        for actor_name, actor in self.brfld.actors_for_layer(layer_name).items():
+                            key = (layer_name, actor_name)
+                            self.visible_actors[key] = imgui.checkbox(
+                                f"{actor_name} ##{layer_name}_{actor_name}", self.visible_actors.get(key)
+                            )[1]
+                        imgui.tree_pop()
+
+        imgui.same_line()
+
+        with imgui_util.with_group():
+            imgui.text("Camera Groups")
+            with imgui_util.with_child("##CameraSections", 200 * current_scale, 0,
+                                       imgui.WINDOW_ALWAYS_VERTICAL_SCROLLBAR):
+                highlighted_section = None
+                for key in self.valid_cameras.keys():
+                    self.valid_cameras[key] = imgui.checkbox(key, self.valid_cameras[key])[1]
+                    if imgui.is_item_hovered():
+                        highlighted_section = key
+
+        imgui.same_line()
+
+        with imgui_util.with_child("##Canvas", 0, 0):
+            self.render_scale = imgui.slider_float("Scale", self.render_scale, 100, 1000)[1]
+            self.display_borders["left"], self.display_borders["right"] = imgui.slider_float2(
+                "Left and right borders",
+                self.display_borders["left"],
+                self.display_borders["right"],
+                -59999,
+                59999,
+            )[1]
+            self.display_borders["top"], self.display_borders["bottom"] = imgui.slider_float2(
+                "Top and bottom borders",
+                self.display_borders["top"],
+                self.display_borders["bottom"],
+                59999,
+                -59999,
+            )[1]
+
+            imgui.separator()
+
+            mouse = imgui.get_mouse_pos()
+            canvas_po = imgui.get_cursor_screen_pos()
+            actual_scale = self.render_scale * current_scale
+            draw_list = imgui.get_window_draw_list()
+
+            def lerp_x(x):
+                lx = (x - self.display_borders["left"]) / (
+                        self.display_borders["right"] - self.display_borders["left"])
+                return lx * actual_scale + canvas_po.x
+
+            def lerp_y(y):
+                ly = (y - self.display_borders["top"]) / (
+                        self.display_borders["bottom"] - self.display_borders["top"])
+                return ly * actual_scale + canvas_po.y
+
+            for entry in self.bmscc.raw.layers[0].entries:
+                if not self.valid_cameras.get(entry.name):
+                    continue
+
+                raw_vertices = [
+                    (lerp_x(v.x), lerp_y(v.y))
+                    for v in entry.data.polys[0].points
+                ]
+                if highlighted_section == entry.name:
+                    draw_list.add_polyline(raw_vertices, imgui.get_color_u32_rgba(0.2, 0.8, 1, 1.0),
+                                           closed=True,
+                                           thickness=5)
+                else:
+                    draw_list.add_polyline(raw_vertices, imgui.get_color_u32_rgba(0.2, 0.2, 1, 0.8),
+                                           closed=True,
+                                           thickness=3)
+
+            highlighted_actors = []
+
+            for actor in self.brfld.actors_for_layer("default").values():
+                final_x = lerp_x(actor.vPos[0])
+                final_y = lerp_y(actor.vPos[1])
+                draw_list.add_circle_filled(final_x, final_y, 5, imgui.get_color_u32_rgba(1, 1, 0, 1))
+                if (mouse.x - final_x) ** 2 + (mouse.y - final_y) ** 2 < 4 * 4:
+                    highlighted_actors.append(actor)
+
+            if highlighted_actors:
+                imgui.begin_tooltip()
+                for actor in highlighted_actors:
+                    imgui.text(actor.sName)
+                imgui.end_tooltip()
+
+        imgui.end()
+        return True
+
+    def draw_visible_actors(self, current_scale: float):
+        for (layer_name, actor_name), active in self.visible_actors.items():
+            if not active:
+                continue
+
+            imgui.set_next_window_size(300 * current_scale, 200 * current_scale, imgui.FIRST_USE_EVER)
+            path = f"{self.file_name}_{layer_name}_{actor_name}"
+            active = imgui.begin(f"Actor: {layer_name} - {actor_name} ##{path}", active)[1]
+            if not active:
+                self.visible_actors[(layer_name, actor_name)] = False
+                imgui.end()
+                continue
+
+            actor = self.brfld.actors_for_layer(layer_name)[actor_name]
+            imgui.columns(2)
+            type_render.render_value_of_type(actor, actor["@type"], f"{layer_name}.{actor_name}")
+            imgui.columns(1)
+
+            imgui.end()
 
 
-def render_float(value):
-    imgui.text("{:.2f}".format(value))
-
-
-def render_int(value):
-    imgui.text(str(value))
-
-
-def render_string(value):
-    imgui.text(value)
+current_level_data: Optional[LevelData] = None
 
 
 def render_actor_link(value: str):
-    if value.startswith("Root"):
+    if value.startswith("Root") and current_level_data is not None:
         if imgui.button(value):
-            if (actor := current_brfld.follow_link(value)) is not None:
-                layer_name = value.split(":")[4]
-                visible_actors[(layer_name, actor.sName)] = True
+            current_level_data.open_actor_link(value)
     else:
         imgui.text(value)
 
 
-def render_float_vector(value):
-    [None, None, imgui.input_float2, imgui.input_float3, imgui.input_float4][len(value)]("", *value)
-
-
-_known_type_renders = {
-    "bool": render_bool,
-    "float": render_float,
-    "float32": render_float,
-    "int": render_int,
-    "unsigned": render_int,
-    "unsigned_int": render_int,
-
-    "base::global::CStrId": render_string,
-    "base::global::CFilePathStrId": render_string,
-    "base::global::CRntString": render_string,
-    "CGameLink<CActor>": render_actor_link,
-    "CGameLink<CEntity>": render_actor_link,
-    "CGameLink<CSpawnPointComponent>": render_actor_link,
-    "base::global::CName": render_string,
-    "base::core::CAssetLink": render_string,
-
-    "base::math::CVector2D": render_float_vector,
-    "base::math::CVector3D": render_float_vector,
-    "base::math::CVector4D": render_float_vector,
-}
-
-vector_re = re.compile(r"(?:base::)?global::CRntVector<(.*?)(?:, false)?>$")
-dict_re = re.compile(r"base::global::CRnt(?:Small)?Dictionary<base::global::CStrId,[\s_](.*)>$")
-
-unique_ptr_re = re.compile(r"std::unique_ptr<(.*)>$")
-weak_ptr_re = re.compile(r"base::global::CWeakPtr<(.*)>$")
-raw_ptr_re = re.compile(r"(.*?)(?:[ ]?const)?\*$")
-ref_re = re.compile(r"CGameObjectRef<(.*)>$")
-typed_var_re = re.compile(r"(base::reflection::CTypedValue)$")
-all_ptr_re = [unique_ptr_re, weak_ptr_re, raw_ptr_re, ref_re, typed_var_re]
-
-
-def find_ptr_match(type_name: str):
-    for expr in all_ptr_re:
-        m = expr.match(type_name)
-        if m is not None:
-            return m
-
-
-def render_vector_of_type(value: list, type_name: str, path: str):
-    for i, item in enumerate(value):
-        if i > 0:
-            imgui.separator()
-        render_value_of_type(item, type_name, f"{path}[{i}]")
-
-
-def render_dict_of_type(value: dict, type_name: str, path: str):
-    for key, item in value.items():
-        if imgui.tree_node(f"{key} ##{path}[{key}]"):
-            render_value_of_type(item, type_name, f"{path}[{key}]")
-            imgui.tree_pop()
-
-
-def render_ptr_of_type(value, type_name: str, path: str):
-    if isinstance(value, dict) and "@type" in value:
-        type_name = value["@type"]
-    render_value_of_type(value, type_name, path)
-
-
-def render_value_of_type(value, type_name: str, path: str):
-    if type_name in _known_type_renders:
-        _known_type_renders[type_name](value)
-
-    elif (m := vector_re.match(type_name)) is not None:
-        render_vector_of_type(value, m.group(1), path)
-
-    elif (m := dict_re.match(type_name)) is not None:
-        render_dict_of_type(value, m.group(1), path)
-
-    elif (m := find_ptr_match(type_name)) is not None:
-        render_ptr_of_type(value, m.group(1), path)
-
-    elif type_name in dread_types.get():
-        def render_type(type_data):
-            if type_data["parent"] is not None:
-                render_type(dread_types.get()[type_data["parent"]])
-
-            for field_name, field_type in type_data["fields"].items():
-                if field_name in value:
-                    if field_type in _known_type_renders:
-                        imgui.text(field_name)
-                        imgui.next_column()
-                        render_value_of_type(value[field_name], field_type, f"{path}.{field_name}")
-                        imgui.next_column()
-                    else:
-                        if imgui.tree_node(f"{field_name} ##{path}.{field_name}", imgui.TREE_NODE_DEFAULT_OPEN):
-                            render_value_of_type(value[field_name], field_type, f"{path}.{field_name}")
-                            imgui.tree_pop()
-                        imgui.next_column()
-                        imgui.next_column()
-
-        if "@type" in value:
-            imgui.text(f'Type: {value["@type"]}')
-            imgui.next_column()
-            imgui.next_column()
-        render_type(dread_types.get()[type_name])
-
-    else:
-        print(f"Unsupported render of type {type_name}")
+for k in ["CGameLink<CActor>", "CGameLink<CEntity>", "CGameLink<CSpawnPointComponent>"]:
+    type_render.KNOWN_TYPE_RENDERS[k] = render_actor_link
 
 
 def loop():
@@ -225,15 +275,12 @@ def loop():
     window = impl_glfw_init()
     impl = GlfwRenderer(window)
 
-    global preferences, current_brfld, current_bmscc, visible_actors
+    global preferences, current_level_data
     if preferences_file_path.exists():
         preferences = json.loads(preferences_file_path.read_text())
 
     pkg_editor: Optional[PkgEditor] = None
-    current_file_name: Optional[str] = None
-    valid_cameras: dict[str, bool] = {}
     possible_brfld = []
-    visible_actors = {}
 
     with ExitStack() as stack:
         def load_romfs(path: Path):
@@ -261,7 +308,8 @@ def loop():
         while not glfw.window_should_close(window):
             glfw.poll_events()
             impl.process_inputs()
-            imgui.get_io().font_global_scale = glfw.get_window_content_scale(window)[0]
+            current_scale = glfw.get_window_content_scale(window)[0]
+            imgui.get_io().font_global_scale = current_scale
 
             imgui.new_frame()
 
@@ -287,117 +335,20 @@ def loop():
             if possible_brfld:
                 imgui.begin("Select file to open", True)
                 index = -1
-                if current_file_name is not None:
-                    index = possible_brfld.index(current_file_name)
+                if current_level_data is not None:
+                    index = possible_brfld.index(current_level_data.file_name)
                 changed, current = imgui.listbox("File to open", index, possible_brfld)
                 if changed:
-                    current_file_name = possible_brfld[current]
-                    current_brfld = Brfld.parse(pkg_editor.get_asset_with_name(current_file_name),
-                                                target_game=Game.DREAD)
-                    valid_cameras = {
-                        key: True
-                        for key in sorted(get_subareas(pkg_editor, current_file_name))
-                    }
-                    current_bmscc = Bmscc.parse(pkg_editor.get_asset_with_name(
-                        current_file_name.replace(".brfld", ".bmscc")),
-                        target_game=Game.DREAD,
-                    )
-                    visible_actors = {}
-                imgui.end()
-
-            if current_brfld is not None:
-                expanded, closed = imgui.begin(os.path.basename(current_file_name), True)
-                imgui.columns(3, "level data")
-
-                imgui.text("Actor Layers")
-
-                for layer_name in current_brfld.raw.Root.pScenario.rEntitiesLayer.dctSublayers:
-                    if imgui.tree_node(layer_name):
-                        for actor_name, actor in current_brfld.actors_for_layer(layer_name).items():
-                            key = (layer_name, actor_name)
-                            visible_actors[key] = imgui.checkbox(
-                                f"{actor_name} ##{layer_name}_{actor_name}", visible_actors.get(key)
-                            )[1]
-                        imgui.tree_pop()
-
-                imgui.next_column()
-
-                imgui.text("Camera Sections")
-                highlighted_section = None
-                for key in valid_cameras.keys():
-                    valid_cameras[key] = imgui.checkbox(key, valid_cameras[key])[1]
-                    if imgui.is_item_hovered():
-                        highlighted_section = key
-
-                imgui.next_column()
-
-                mouse = imgui.get_mouse_pos()
-                canvas_po = imgui.get_cursor_screen_pos()
-                canvas_size = imgui.get_content_region_available()
-                draw_list = imgui.get_window_draw_list()
-                left = -12000
-                right = 12000
-
-                def lerp_x(x):
-                    lx = (x - left) / (right - left)
-                    return lx * canvas_size.x + canvas_po.x
-
-                def lerp_y(y):
-                    ly = (y - left) / (right - left)
-                    return ly * canvas_size.y + canvas_po.y
-
-                for entry in current_bmscc.raw.layers[0].entries:
-                    x1, y1, x2, y2 = entry.data.total_boundings
-                    if abs(x1) > 59999 or abs(y1) > 59999 or abs(x2) > 59999 or abs(y2) > 59999:
-                        continue
-
-                    if not valid_cameras.get(entry.name):
-                        continue
-
-                    raw_vertices = [
-                        (lerp_x(v.x), lerp_y(v.y))
-                        for v in entry.data.polys[0].points
-                    ]
-                    if highlighted_section == entry.name:
-                        draw_list.add_polyline(raw_vertices, imgui.get_color_u32_rgba(0.2, 0.8, 1, 1.0), closed=True,
-                                               thickness=5)
-                    else:
-                        draw_list.add_polyline(raw_vertices, imgui.get_color_u32_rgba(0.2, 0.2, 1, 0.8), closed=True,
-                                               thickness=3)
-
-                highlighted_actors = []
-
-                for actor in current_brfld.actors_for_layer("default").values():
-                    final_x = lerp_x(actor.vPos[0])
-                    final_y = lerp_y(actor.vPos[1])
-                    draw_list.add_circle_filled(final_x, final_y, 5, imgui.get_color_u32_rgba(1, 1, 0, 1))
-                    if (mouse.x - final_x) ** 2 + (mouse.y - final_y) ** 2 < 4 * 4:
-                        highlighted_actors.append(actor)
-
-                if highlighted_actors:
-                    imgui.begin_tooltip()
-                    for actor in highlighted_actors:
-                        imgui.text(actor.sName)
-                    imgui.end_tooltip()
+                    current_level_data = LevelData.open_file(pkg_editor, possible_brfld[current])
 
                 imgui.end()
 
-            for (layer_name, actor_name), active in visible_actors.items():
-                if not active:
-                    continue
+            if current_level_data is not None:
+                if not current_level_data.render_window(current_scale):
+                    current_level_data = None
 
-                active = imgui.begin(f"Actor: {layer_name} - {actor_name}", active)[1]
-                if not active:
-                    visible_actors[(layer_name, actor_name)] = False
-                    imgui.end()
-                    continue
-
-                actor = current_brfld.actors_for_layer(layer_name)[actor_name]
-                imgui.columns(2)
-                render_value_of_type(actor, actor["@type"], f"{layer_name}.{actor_name}")
-                imgui.columns(1)
-
-                imgui.end()
+            if current_level_data is not None:
+                current_level_data.draw_visible_actors(current_scale)
 
             imgui.show_test_window()
 
