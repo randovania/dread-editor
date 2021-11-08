@@ -22,12 +22,15 @@ from mercury_engine_data_structures.pkg_editor import PkgEditor
 from dread_editor import type_render, imgui_util
 
 preferences: Dict[str, typing.Any] = {}
-preferences_file_path = Path(__file__).parent.joinpath("preferences.json")
+preferences_file_path = Path("preferences.json")
 
 
 def save_preferences():
-    with preferences_file_path.open("w") as f:
-        json.dump(preferences, f, indent=4)
+    try:
+        with preferences_file_path.open("w") as f:
+            json.dump(preferences, f, indent=4)
+    except IOError as e:
+        print(f"Unable to save preferences: {e}")
 
 
 def prompt_file(directory: bool):
@@ -287,9 +290,9 @@ class LevelData:
                 continue
 
             actor = self.brfld.actors_for_layer(layer_name)[actor_name]
-            imgui.columns(2)
+            imgui.columns(2, "actor details")
             type_render.render_value_of_type(actor, actor["@type"], f"{layer_name}.{actor_name}")
-            imgui.columns(1)
+            imgui.columns(1, "actor details")
 
             imgui.end()
 

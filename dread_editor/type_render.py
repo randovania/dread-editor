@@ -98,11 +98,19 @@ def render_value_of_type(value, type_name: str, path: str):
                 render_type(dread_data.get_raw_types()[type_data["parent"]])
 
             for field_name, field_type in type_data["fields"].items():
+                imgui.checkbox(f"##{path}.{field_name}_present", field_name in value)
+                imgui.same_line()
+
                 if field_name in value:
                     if field_type in KNOWN_TYPE_RENDERS:
                         imgui.text(field_name)
                         imgui.next_column()
                         render_value_of_type(value[field_name], field_type, f"{path}.{field_name}")
+                        imgui.next_column()
+                    elif field_name.startswith("e"):
+                        imgui.text(field_name)
+                        imgui.next_column()
+                        imgui.text(f"{value[field_name]}")
                         imgui.next_column()
                     else:
                         if imgui.tree_node(f"{field_name} ##{path}.{field_name}", imgui.TREE_NODE_DEFAULT_OPEN):
@@ -110,6 +118,11 @@ def render_value_of_type(value, type_name: str, path: str):
                             imgui.tree_pop()
                         imgui.next_column()
                         imgui.next_column()
+                else:
+                    imgui.text(field_name)
+                    imgui.next_column()
+                    imgui.text("<default>")
+                    imgui.next_column()
 
         if "@type" in value:
             imgui.text(f'Type: {value["@type"]}')
@@ -118,4 +131,6 @@ def render_value_of_type(value, type_name: str, path: str):
         render_type(dread_data.get_raw_types()[type_name])
 
     else:
-        print(f"Unsupported render of type {type_name}")
+        imgui.next_column()
+        imgui.text(f"Unsupported render of type {type_name}")
+        imgui.next_column()
