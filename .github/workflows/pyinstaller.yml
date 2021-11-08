@@ -15,13 +15,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: 'ubuntu-latest'
-            python: '3.9'
-            name: 'Linux'
-
-          - os: 'macos-latest'
-            python: '3.9'
-            name: 'macOS'
+#          - os: 'ubuntu-latest'
+#            python: '3.9'
+#            name: 'Linux'
+#
+#          - os: 'macos-latest'
+#            python: '3.9'
+#            name: 'macOS'
 
           - os: 'windows-latest'
             python: '3.9'
@@ -64,25 +64,24 @@ jobs:
 
       - name: create executable
         run: |
-          python tools/create_release.py
+          python -m PyInstaller dread_editor.spec
           cd dist
-          7z a -mx=7 -myx=7 dread_editor.7z dread_editor
+          7z a -mx=7 -myx=7 dread_editor_${{ matrix.name }}.7z dread_editor
 
       - name: Upload artifacts
-        if: ${{ matrix.executable }}
         uses: actions/upload-artifact@v2
         with:
           name: Dread Editor ${{ matrix.name }}
           if-no-files-found: error
           path: |
-            dist/dread_editor.7z
+            dist/dread_editor_${{ matrix.name }}.7z
 
       - name: Upload binaries to release
         uses: svenstaro/upload-release-action@2.2.1
-        if: ${{ matrix.executable && startsWith(github.ref, 'refs/tags/v') }}
+        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: dist/dread_editor.7z
+          file: dist/dread_editor_${{ matrix.name }}.7z
           file_glob: true
           tag: ${{ github.ref }}
           overwrite: true
