@@ -127,6 +127,9 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
+# Generated files
+/dread_editor/version.py
+
 # Runtime preferences
 /preferences.json
 /imgui.ini
