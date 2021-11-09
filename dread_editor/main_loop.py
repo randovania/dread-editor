@@ -14,7 +14,6 @@ import OpenGL.GL as gl
 import glfw
 import imgui
 from imgui.integrations.glfw import GlfwRenderer
-from mercury_engine_data_structures import dread_data
 from mercury_engine_data_structures.formats import Brfld, Brsa, Bmscc
 from mercury_engine_data_structures.pkg_editor import PkgEditor
 
@@ -22,6 +21,7 @@ from dread_editor import type_render, imgui_util
 
 preferences: Dict[str, typing.Any] = {}
 preferences_file_path = Path("preferences.json")
+all_bmsad_actordefs = []
 
 
 def save_preferences():
@@ -268,6 +268,9 @@ class LevelData:
                 imgui.begin_tooltip()
                 for layer_name, actor in self.highlighted_actors_in_canvas:
                     imgui.text(f"{layer_name} - {actor.sName}")
+                    if imgui.is_mouse_double_clicked(0):
+                        self.visible_actors[(layer_name, actor.sName)] = True
+
                 imgui.end_tooltip()
 
         imgui.end()
@@ -291,6 +294,21 @@ class LevelData:
             type_render.render_value_of_type(actor, actor["@type"], f"{layer_name}.{actor_name}")
             imgui.columns(1, "actor details")
 
+            imgui.separator()
+            imgui.text("Actor Groups")
+            link_for_actor = f"Root:pScenario:rEntitiesLayer:dctSublayers:{layer_name}:dctActors:{actor_name}"
+
+            actor_groups = typing.cast(dict[str, list[str]],
+                                       self.brfld.raw.Root.pScenario.rEntitiesLayer.dctActorGroups)
+            for group_name, group_elements in actor_groups.items():
+                changed, present = imgui.checkbox(f"{group_name} ##actor_group.{group_name}",
+                                                  link_for_actor in group_elements)
+                if changed:
+                    if present:
+                        group_elements.append(link_for_actor)
+                    else:
+                        group_elements.remove(link_for_actor)
+
             imgui.end()
 
     def apply_changes_to(self, pkg_editor: PkgEditor):
@@ -313,6 +331,18 @@ for k in ["CGameLink<CActor>", "CGameLink<CEntity>", "CGameLink<CSpawnPointCompo
     type_render.KNOWN_TYPE_RENDERS[k] = render_actor_link
 
 
+def render_asset_link(value: str, path: str):
+    if path.endswith(".oActorDefLink"):
+        result = imgui_util.combo_str(f"##{path}", value, all_bmsad_actordefs)
+        imgui_util.set_hovered_tooltip(value)
+        return result
+    else:
+        return type_render.render_string(value, path)
+
+
+type_render.KNOWN_TYPE_RENDERS["base::core::CAssetLink"] = render_asset_link
+
+
 def loop():
     imgui.create_context()
     window = impl_glfw_init()
@@ -332,12 +362,19 @@ def loop():
             stack.close()
             pkg_editor = stack.enter_context(PkgEditor.open_pkgs_at(path))
             possible_brfld = [
-                name
-                for asset_id in pkg_editor.all_asset_ids()
-                if (name := dread_data.name_for_asset_id(asset_id)) is not None
-                   and name.endswith("brfld")
+                asset_name
+                for asset_name in pkg_editor.all_asset_names()
+                if asset_name.endswith("brfld")
             ]
             possible_brfld.sort()
+            all_bmsad_actordefs.clear()
+            all_bmsad_actordefs.extend([
+                f"actordef:{asset_name}"
+                for asset_name in pkg_editor.all_asset_names()
+                if asset_name.endswith("bmsad")
+            ])
+            all_bmsad_actordefs.sort()
+
             preferences["last_romfs"] = str(path)
             save_preferences()
 
