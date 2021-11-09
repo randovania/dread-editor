@@ -127,6 +127,7 @@ def _render_container_of_type(value, type_name: str, path: str,
                               iterate_func,
                               naming_func,
                               new_item_prompt_func,
+                              delete_func,
                               ):
     modified = False
     single_column_element = type_uses_one_column(type_name)
@@ -134,6 +135,9 @@ def _render_container_of_type(value, type_name: str, path: str,
     for key, item in iterate_func(value):
         element_path = f"{path}[{key}]"
         changed, result = False, item
+
+        delete = imgui.button(f"X##{element_path}_delete")
+        imgui.same_line()
 
         if single_column_element:
             imgui.text(naming_func(key))
@@ -151,7 +155,11 @@ def _render_container_of_type(value, type_name: str, path: str,
                 changed, result = render_value_of_type(item, type_name, element_path)
                 imgui.tree_pop()
 
-        if changed:
+        if delete:
+            delete_func(key)
+            modified = True
+
+        elif changed:
             value[key] = result
             modified = True
 
@@ -176,6 +184,7 @@ def render_vector_of_type(value: list, type_name: str, path: str):
         lambda v: enumerate(v),
         lambda k: f"Item {k}",
         new_item_prompt,
+        value.pop,
     )
 
 
@@ -195,6 +204,7 @@ def render_dict_of_type(value: dict, type_name: str, path: str):
         lambda v: v.items(),
         lambda k: k,
         new_item_prompt,
+        value.pop,
     )
 
 

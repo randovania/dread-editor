@@ -301,11 +301,11 @@ current_level_data: Optional[LevelData] = None
 
 
 def render_actor_link(value: str, path: str):
-    if value.startswith("Root") and current_level_data is not None:
+    if isinstance(value, str) and value.startswith("Root") and current_level_data is not None:
         if imgui.button(value):
             current_level_data.open_actor_link(value)
     else:
-        imgui.text(value)
+        imgui.text(str(value))
     return False, None
 
 
