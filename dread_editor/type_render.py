@@ -85,6 +85,26 @@ KNOWN_TYPE_RENDERS: dict[str, typing.Callable[[typing.Any, str], tuple[bool, typ
     "base::math::CVector3D": render_float_vector,
     "base::math::CVector4D": render_float_vector,
 }
+KNOWN_TYPE_DEFAULTS: dict[str, typing.Callable[[], typing.Any]] = {
+    "bool": lambda: False,
+    "float": lambda: 0.0,
+    "float32": lambda: 0.0,
+    "int": lambda: 0,
+    "unsigned": lambda: 0,
+    "unsigned_int": lambda: 0,
+
+    "base::global::CStrId": lambda: "",
+    "base::global::CFilePathStrId": lambda: "",
+    "base::global::CRntString": lambda: "",
+    "base::global::CName": lambda: "",
+    "base::core::CAssetLink": lambda: "<EMPTY>",
+    "base::reflection::CTypedValue": lambda: b"",
+
+    "base::math::CVector2D": lambda: [0.0, 0.0],
+    "base::math::CVector3D": lambda: [0.0, 0.0, 0.0],
+    "base::math::CVector4D": lambda: [0.0, 0.0, 0.0, 0.0],
+}
+
 vector_re = re.compile(r"(?:base::)?global::CRntVector<(.*?)(?:, false)?>$")
 dict_re = re.compile(r"base::global::CRnt(?:Small)?Dictionary<base::global::CStrId,[\s_](.*)>$")
 unique_ptr_re = re.compile(r"std::unique_ptr<(.*)>$")
@@ -103,9 +123,10 @@ def find_ptr_match(type_name: str):
 
 
 def _render_container_of_type(value, type_name: str, path: str,
+                              tree_node_flags,
                               iterate_func,
                               naming_func,
-                              tree_node_flags,
+                              new_item_prompt_func,
                               ):
     modified = False
     single_column_element = type_uses_one_column(type_name)
@@ -134,34 +155,56 @@ def _render_container_of_type(value, type_name: str, path: str,
             value[key] = result
             modified = True
 
-    with imgui.styled(imgui.STYLE_ALPHA, 0.5):
-        imgui.button("New Item")
-        imgui.next_column()
-        imgui.text("(Not Implemented)")
-        imgui.next_column()
+    new_element, new_element_func = new_item_prompt_func()
+    imgui.next_column()
+    imgui.next_column()
+
+    if new_element:
+        new_element_func(create_default_of_type(type_name))
+        modified = True
 
     return modified, value
 
 
 def render_vector_of_type(value: list, type_name: str, path: str):
+    def new_item_prompt():
+        return imgui.button("New Item"), value.append
+
     return _render_container_of_type(
         value, type_name, path,
+        imgui.TREE_NODE_DEFAULT_OPEN,
         lambda v: enumerate(v),
         lambda k: f"Item {k}",
-        imgui.TREE_NODE_DEFAULT_OPEN,
+        new_item_prompt,
     )
 
 
 def render_dict_of_type(value: dict, type_name: str, path: str):
+    def new_item_prompt():
+        _, key_name = imgui_util.persistent_input_text("", f"{path}_new_item", initial_value="Key")
+        imgui.same_line()
+
+        def item_add(new_item):
+            value[key_name] = new_item
+
+        return imgui.button("New Item"), item_add
+
     return _render_container_of_type(
         value, type_name, path,
+        0,
         lambda v: v.items(),
         lambda k: k,
-        0,
+        new_item_prompt,
     )
 
 
 _debug_once = set()
+
+
+def print_once(path, msg):
+    if path not in _debug_once:
+        _debug_once.add(path)
+        print(msg)
 
 
 def render_ptr_of_type(value, type_name: str, path: str):
@@ -214,30 +257,60 @@ def render_ptr_of_type(value, type_name: str, path: str):
         changed, selected = imgui.combo("##" + path, all_options.index(value_type), all_options)
         # TODO: actually allow to change the type, oops
         imgui.next_column()
-        return render_value_of_type(value, value_type, f"{path}.Deref")
+
+        if value_type != "None":
+            return render_value_of_type(value, value_type, f"{path}.Deref")
+        else:
+            return False, None
 
 
 def type_uses_one_column(type_name: str):
     if type_name in KNOWN_TYPE_RENDERS:
         return True
 
-    elif (m := vector_re.match(type_name)) is not None:
+    if (m := vector_re.match(type_name)) is not None:
         return False
 
-    elif (m := dict_re.match(type_name)) is not None:
+    if (m := dict_re.match(type_name)) is not None:
         return False
 
-    elif (m := find_ptr_match(type_name)) is not None:
+    if (m := find_ptr_match(type_name)) is not None:
         return False
 
-    elif type_name in ALL_TYPES:
+    if type_name in ALL_TYPES:
         return ALL_TYPES[type_name]["values"] is not None
 
-    else:
-        return True
+    # FIXME: unknown, so kind of logging would be nice
+    return True
 
 
-def render_enum_of_type(value, type_name: str, path: str) -> tuple[bool, typing.Any]:
+def create_default_of_type(type_name: str):
+    if type_name in KNOWN_TYPE_DEFAULTS:
+        return KNOWN_TYPE_DEFAULTS[type_name]()
+
+    if (m := vector_re.match(type_name)) is not None:
+        return []
+
+    if (m := dict_re.match(type_name)) is not None:
+        return {}
+
+    if (m := find_ptr_match(type_name)) is not None:
+        return None
+
+    if type_name in ALL_TYPES:
+        type_data = ALL_TYPES[type_name]
+        if type_data["values"] is not None:
+            # enum
+            return "Invalid"
+        else:
+            # struct, empty struct is always nice :)
+            return {}
+
+    # FIXME: unknown, so kind of logging would be nice
+    return None
+
+
+def render_enum_of_type(value: str, type_name: str, path: str) -> tuple[bool, typing.Any]:
     all_enum_values = list(ALL_TYPES[type_name]["values"].keys())
     changed, selected = imgui.combo("##" + path,
                                     all_enum_values.index(value),
@@ -251,11 +324,6 @@ def render_enum_of_type(value, type_name: str, path: str) -> tuple[bool, typing.
 def render_value_of_type(value, type_name: str, path: str) -> tuple[bool, typing.Any]:
     if type_name in KNOWN_TYPE_RENDERS:
         return KNOWN_TYPE_RENDERS[type_name](value, path)
-
-    if value is None:
-        # TODO
-        imgui.text("None")
-        return False, None
 
     if (m := vector_re.match(type_name)) is not None:
         return render_vector_of_type(value, m.group(1), path)
@@ -291,51 +359,46 @@ def render_value_of_type(value, type_name: str, path: str) -> tuple[bool, typing
             field_path = f"{path}.{field_name}"
             tooltip = f"Field of class {current_type_name} of type {field_type}."
 
-            changed, new_field = False, None
-
             field_present = field_name in value
             present_changed, field_present = imgui.checkbox(f"##{field_path}_present", field_present)
             imgui.same_line()
 
             if present_changed:
-                # TODO
-                present_changed = False
-                field_present = field_name in value
+                modified = True
+                if field_present:
+                    value[field_name] = create_default_of_type(field_type)
+                else:
+                    value.pop(field_name)
 
-            if field_present:
-                field_value = value[field_name]
+            field_value = value.get(field_name)
+            changed, new_field = False, field_value
 
-                if type_uses_one_column(field_type):
-                    imgui.text(field_name)
-                    imgui_util.set_hovered_tooltip(tooltip)
-                    imgui.next_column()
+            if type_uses_one_column(field_type) or not field_present:
+                imgui.text(field_name)
+                imgui_util.set_hovered_tooltip(tooltip)
+                imgui.next_column()
 
+                if field_present:
                     if field_name in type_data.get("read_only_fields", []):
                         imgui.text(str(field_value))
                     else:
                         changed, new_field = render_value_of_type(field_value, field_type, field_path)
-                    imgui.next_column()
                 else:
-                    node_open = imgui.tree_node(f"{field_name} ##{field_path}", imgui.TREE_NODE_DEFAULT_OPEN)
-                    imgui_util.set_hovered_tooltip(tooltip)
+                    imgui.text("<not defined>")
 
-                    imgui.next_column()
-                    imgui.next_column()
-                    if node_open:
-                        changed, new_field = render_value_of_type(field_value, field_type, field_path)
-                        imgui.tree_pop()
+                imgui.next_column()
             else:
-                imgui.text(field_name)
+                node_open = imgui.tree_node(f"{field_name} ##{field_path}", imgui.TREE_NODE_DEFAULT_OPEN)
                 imgui_util.set_hovered_tooltip(tooltip)
+
                 imgui.next_column()
-                imgui.text("<default>")
                 imgui.next_column()
+                if node_open:
+                    changed, new_field = render_value_of_type(field_value, field_type, field_path)
+                    imgui.tree_pop()
 
             if changed:
-                if field_present:
-                    value[field_name] = new_field
-                else:
-                    value.pop(field_name, None)
+                value[field_name] = new_field
                 modified = True
 
     render_type(type_name)

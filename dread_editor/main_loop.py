@@ -250,6 +250,10 @@ class LevelData:
 
                 color = imgui.get_color_u32_rgba(*color_for_layer(layer_name))
                 for actor in self.brfld.actors_for_layer(layer_name).values():
+                    if "vPos" not in actor:
+                        # TODO: vPos might be a required field. Re-visit after editor fields
+                        continue
+
                     final_x = lerp_x(actor.vPos[0])
                     final_y = lerp_y(actor.vPos[1])
                     if (layer_name, actor.sName) in highlighted_actors_in_list:
