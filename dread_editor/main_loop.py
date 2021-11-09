@@ -48,10 +48,7 @@ def prompt_file(directory: bool):
 def get_subareas(pkg_editor: PkgEditor, brfld_path: str) -> set[str]:
     cams: set[str] = set()
 
-    brsa = Brsa.parse(pkg_editor.get_asset_with_name(
-        brfld_path.replace(".brfld", ".brsa")),
-        target_game=Game.DREAD,
-    )
+    brsa = typing.cast(Brsa, pkg_editor.get_parsed_asset(brfld_path.replace(".brfld", ".brsa")))
 
     for setup in brsa.raw.Root.pSubareaManager.vSubareaSetups:
         for config in setup.vSubareaConfigs:
@@ -106,16 +103,13 @@ class LevelData:
 
     @classmethod
     def open_file(cls, pkg_editor: PkgEditor, file_name: str):
-        brfld = Brfld.parse(pkg_editor.get_asset_with_name(file_name), target_game=Game.DREAD)
+        brfld = typing.cast(Brfld, pkg_editor.get_parsed_asset(file_name))
 
         valid_cameras = {
             key: True
             for key in sorted(get_subareas(pkg_editor, file_name))
         }
-        bmscc = Bmscc.parse(pkg_editor.get_asset_with_name(
-            file_name.replace(".brfld", ".bmscc")),
-            target_game=Game.DREAD,
-        )
+        bmscc = typing.cast(Bmscc, pkg_editor.get_parsed_asset(file_name.replace(".brfld", ".bmscc")))
 
         display_borders: dict[str, float] = {"left": 0, "right": 0, "top": 0, "bottom": 0}
         for entry in bmscc.raw.layers[0].entries:
@@ -296,6 +290,9 @@ class LevelData:
 
             imgui.end()
 
+    def apply_changes_to(self, pkg_editor: PkgEditor):
+        pkg_editor.replace_asset(self.file_name, self.brfld.build())
+
 
 current_level_data: Optional[LevelData] = None
 
@@ -322,6 +319,7 @@ def loop():
         preferences = json.loads(preferences_file_path.read_text())
 
     pkg_editor: Optional[PkgEditor] = None
+    current_error_message = None
     possible_brfld = []
 
     with ExitStack() as stack:
@@ -355,35 +353,62 @@ def loop():
 
             imgui.new_frame()
 
+            if current_error_message is not None:
+                imgui.open_popup("Error")
+                if imgui.begin_popup_modal("Error")[0]:
+                    imgui.text(current_error_message)
+                    if imgui.button("Ok"):
+                        current_error_message = None
+                    imgui.end_popup()
+
             if imgui.begin_main_menu_bar():
                 if imgui.begin_menu("File", True):
 
-                    if imgui.menu_item("Open Dread romfs root")[0]:
+                    if imgui.menu_item("Select extracted Metroid Dread root")[0]:
                         f = prompt_file(directory=True)
                         if f:
                             load_romfs(Path(f))
 
-                    clicked_quit, selected_quit = imgui.menu_item(
-                        "Quit", 'Cmd+Q', False, True
-                    )
+                    imgui.text_disabled(f'* Current root: {preferences.get("last_romfs")}')
 
-                    if clicked_quit:
-                        raise SystemExit(0)
+                    if imgui.menu_item("Select output path")[0]:
+                        f = prompt_file(directory=True)
+                        if f:
+                            preferences["output_path"] = f
+                            save_preferences()
+
+                    imgui.text_disabled(f'* Current output path: {preferences.get("output_path")}')
+
+                    changed, new_value = imgui.checkbox("Read files from output path first",
+                                                        preferences.get("read_output", False))
+                    if changed:
+                        preferences["read_output"] = new_value
+                        save_preferences()
+
+                    if imgui.menu_item("Save changes")[0]:
+                        if pkg_editor is None:
+                            current_error_message = "Unable to save, no root selected."
+                        elif preferences.get("output_path") is None:
+                            current_error_message = "Unable to save, no output path."
+                        else:
+                            if current_level_data is not None:
+                                current_level_data.apply_changes_to(pkg_editor)
+                            pkg_editor.save_modified_pkgs(Path(preferences["output_path"]))
+
+                    imgui.end_menu()
+
+                if imgui.begin_menu("Select level file", len(possible_brfld) > 0):
+                    current_file_name = None
+                    if current_level_data is not None:
+                        current_file_name = current_level_data.file_name
+
+                    for name in possible_brfld:
+                        if imgui.menu_item(name, "", name == current_file_name)[0]:
+                            current_level_data = LevelData.open_file(pkg_editor, name)
 
                     imgui.end_menu()
 
                 imgui.end_main_menu_bar()
-
-            if possible_brfld:
-                imgui.begin("Select file to open", True)
-                index = -1
-                if current_level_data is not None:
-                    index = possible_brfld.index(current_level_data.file_name)
-                changed, current = imgui.listbox("File to open", index, possible_brfld)
-                if changed:
-                    current_level_data = LevelData.open_file(pkg_editor, possible_brfld[current])
-
-                imgui.end()
 
             if current_level_data is not None:
                 if not current_level_data.render_window(current_scale):
