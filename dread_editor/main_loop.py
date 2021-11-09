@@ -297,12 +297,13 @@ class LevelData:
 current_level_data: Optional[LevelData] = None
 
 
-def render_actor_link(value: str):
+def render_actor_link(value: str, path: str):
     if value.startswith("Root") and current_level_data is not None:
         if imgui.button(value):
             current_level_data.open_actor_link(value)
     else:
         imgui.text(value)
+    return False, None
 
 
 for k in ["CGameLink<CActor>", "CGameLink<CEntity>", "CGameLink<CSpawnPointComponent>"]:
@@ -321,6 +322,8 @@ def loop():
     pkg_editor: Optional[PkgEditor] = None
     current_error_message = None
     possible_brfld = []
+
+    dread_data.get_raw_types()["CActor"]["read_only_fields"] = ["sName"]
 
     with ExitStack() as stack:
         def load_romfs(path: Path):
@@ -363,13 +366,13 @@ def loop():
 
             if imgui.begin_main_menu_bar():
                 if imgui.begin_menu("File", True):
-
                     if imgui.menu_item("Select extracted Metroid Dread root")[0]:
                         f = prompt_file(directory=True)
                         if f:
                             load_romfs(Path(f))
 
                     imgui.text_disabled(f'* Current root: {preferences.get("last_romfs")}')
+                    imgui.separator()
 
                     if imgui.menu_item("Select output path")[0]:
                         f = prompt_file(directory=True)
@@ -378,6 +381,7 @@ def loop():
                             save_preferences()
 
                     imgui.text_disabled(f'* Current output path: {preferences.get("output_path")}')
+                    imgui.separator()
 
                     changed, new_value = imgui.checkbox("Read files from output path first",
                                                         preferences.get("read_output", False))

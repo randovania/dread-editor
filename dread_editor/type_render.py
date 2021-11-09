@@ -1,30 +1,32 @@
 import re
+import typing
 
 import imgui
 from mercury_engine_data_structures import dread_data
 
 
-def render_bool(value):
-    imgui.text(str(value))
+def render_bool(value, path: str):
+    return imgui.checkbox(f"##{path}", value)
 
 
-def render_float(value):
-    imgui.text("{:.2f}".format(value))
+def render_float(value, path: str):
+    return imgui.drag_float(f"##{path}", value)
 
 
-def render_int(value):
-    imgui.text(str(value))
+def render_int(value, path: str):
+    return imgui.drag_int(f"##{path}", value)
 
 
-def render_string(value):
-    imgui.text(value)
+def render_string(value, path: str):
+    return imgui.input_text(f"##{path}", value, 500)
 
 
-def render_float_vector(value):
-    [None, None, imgui.input_float2, imgui.input_float3, imgui.input_float4][len(value)]("", *value)
+def render_float_vector(value, path: str):
+    functions = [None, None, imgui.input_float2, imgui.input_float3, imgui.input_float4]
+    return functions[len(value)](f"##{path}", *value)
 
 
-KNOWN_TYPE_RENDERS = {
+KNOWN_TYPE_RENDERS: dict[str, typing.Callable[[typing.Any, str], tuple[bool, typing.Any]]] = {
     "bool": render_bool,
     "float": render_float,
     "float32": render_float,
@@ -60,40 +62,54 @@ def find_ptr_match(type_name: str):
 
 
 def render_vector_of_type(value: list, type_name: str, path: str):
+    modified = False
     for i, item in enumerate(value):
         if i > 0:
             imgui.separator()
-        render_value_of_type(item, type_name, f"{path}[{i}]")
+        changed, result = render_value_of_type(item, type_name, f"{path}[{i}]")
+        if changed:
+            value[i] = result
+            modified = True
+    return modified, value
 
 
 def render_dict_of_type(value: dict, type_name: str, path: str):
+    modified = False
     for key, item in value.items():
         if imgui.tree_node(f"{key} ##{path}[{key}]"):
-            render_value_of_type(item, type_name, f"{path}[{key}]")
+            changed, result = render_value_of_type(item, type_name, f"{path}[{key}]")
+            if changed:
+                value[key] = result
+                modified = True
             imgui.tree_pop()
+    return modified, value
 
 
 def render_ptr_of_type(value, type_name: str, path: str):
     if isinstance(value, dict) and "@type" in value:
         type_name = value["@type"]
-    render_value_of_type(value, type_name, path)
+    return render_value_of_type(value, type_name, path)
 
 
-def render_value_of_type(value, type_name: str, path: str):
+def render_value_of_type(value, type_name: str, path: str) -> tuple[bool, typing.Any]:
     if type_name in KNOWN_TYPE_RENDERS:
-        KNOWN_TYPE_RENDERS[type_name](value)
+        return KNOWN_TYPE_RENDERS[type_name](value, path)
 
     elif (m := vector_re.match(type_name)) is not None:
-        render_vector_of_type(value, m.group(1), path)
+        return render_vector_of_type(value, m.group(1), path)
 
     elif (m := dict_re.match(type_name)) is not None:
-        render_dict_of_type(value, m.group(1), path)
+        return render_dict_of_type(value, m.group(1), path)
 
     elif (m := find_ptr_match(type_name)) is not None:
-        render_ptr_of_type(value, m.group(1), path)
+        return render_ptr_of_type(value, m.group(1), path)
 
     elif type_name in dread_data.get_raw_types():
+        modified = False
+
         def render_type(type_data):
+            nonlocal modified
+
             if type_data["parent"] is not None:
                 render_type(dread_data.get_raw_types()[type_data["parent"]])
 
@@ -101,12 +117,19 @@ def render_value_of_type(value, type_name: str, path: str):
                 imgui.checkbox(f"##{path}.{field_name}_present", field_name in value)
                 imgui.same_line()
 
+                changed, new_field = False, None
+
                 if field_name in value:
                     if field_type in KNOWN_TYPE_RENDERS:
                         imgui.text(field_name)
                         imgui.next_column()
-                        render_value_of_type(value[field_name], field_type, f"{path}.{field_name}")
+                        if field_name in type_data.get("read_only_fields", []):
+                            imgui.text(str(value[field_name]))
+                        else:
+                            changed, new_field = render_value_of_type(value[field_name], field_type,
+                                                                      f"{path}.{field_name}")
                         imgui.next_column()
+
                     elif field_name.startswith("e"):
                         imgui.text(field_name)
                         imgui.next_column()
@@ -114,7 +137,8 @@ def render_value_of_type(value, type_name: str, path: str):
                         imgui.next_column()
                     else:
                         if imgui.tree_node(f"{field_name} ##{path}.{field_name}", imgui.TREE_NODE_DEFAULT_OPEN):
-                            render_value_of_type(value[field_name], field_type, f"{path}.{field_name}")
+                            changed, new_field = render_value_of_type(value[field_name], field_type,
+                                                                      f"{path}.{field_name}")
                             imgui.tree_pop()
                         imgui.next_column()
                         imgui.next_column()
@@ -124,13 +148,20 @@ def render_value_of_type(value, type_name: str, path: str):
                     imgui.text("<default>")
                     imgui.next_column()
 
+                if changed:
+                    value[field_name] = new_field
+                    modified = True
+
         if "@type" in value:
             imgui.text(f'Type: {value["@type"]}')
             imgui.next_column()
             imgui.next_column()
+
         render_type(dread_data.get_raw_types()[type_name])
+        return modified, value
 
     else:
         imgui.next_column()
         imgui.text(f"Unsupported render of type {type_name}")
         imgui.next_column()
+        return False, value
