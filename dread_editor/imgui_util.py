@@ -38,3 +38,9 @@ def persistent_input_text(label: str, path: str, initial_value: str = "", max_si
     if changed:
         _input_text_persistence[path] = result
     return changed, result
+
+
+def combo_str(label: str, current: str, items: list[str], height_in_items: int = -1) -> tuple[bool, str]:
+    changed, selected = imgui.combo(label, items.index(current), items, height_in_items)
+    selected = items[selected]
+    return changed, selected

@@ -218,28 +218,27 @@ def render_ptr_of_type(value, type_name: str, path: str):
         value_type = value["@type"]
 
     else:
-        # If it's not
-        # There
         if len(all_options) != 2:
-            imgui.text("Expected just two options. Found:")
+            imgui.text("Expected just two options.")
             imgui.next_column()
-            imgui.combo("##" + path, 0, all_options)
             imgui.next_column()
             return False, value
 
         value_type = all_options[1]
 
     if type_uses_one_column(type_name):
-        if path not in _debug_once:
-            _debug_once.add(path)
-            print("SINGLE COLUMN?!", type_name, path)
+        print_once(path, f"At {path}, a ptr to single-column type {type_name}")
+
         # Type selector
-        changed, selected = imgui.combo("##" + path, all_options.index(value_type), all_options)
-        # TODO: actually allow to change the type, oops
+        changed, selected = imgui_util.combo_str("##" + path, value_type, all_options)
         imgui.next_column()
 
+        if changed:
+            value_type = selected
+            value = create_default_of_type(value_type)
+
         # Value
-        changed, result = False, None
+        result = value
 
         if value_type == "None":
             imgui.text("None")
@@ -247,21 +246,26 @@ def render_ptr_of_type(value, type_name: str, path: str):
             if not type_uses_one_column(value_type):
                 imgui.text(f"Expected type {value_type} to use one column")
             else:
-                changed, result = render_value_of_type(value, value_type, f"{path}.Deref")
+                value_changed, result = render_value_of_type(value, value_type, f"{path}.Deref")
+                changed = changed or value_changed
 
         imgui.next_column()
         return changed, result
     else:
         imgui.text("Type")
         imgui.next_column()
-        changed, selected = imgui.combo("##" + path, all_options.index(value_type), all_options)
-        # TODO: actually allow to change the type, oops
+        changed, selected = imgui_util.combo_str("##" + path, value_type, all_options)
         imgui.next_column()
 
+        if changed:
+            value_type = selected
+            value = create_default_of_type(value_type)
+
         if value_type != "None":
-            return render_value_of_type(value, value_type, f"{path}.Deref")
-        else:
-            return False, None
+            value_changed, value = render_value_of_type(value, value_type, f"{path}.Deref")
+            changed = changed or value_changed
+
+        return changed, value
 
 
 def type_uses_one_column(type_name: str):
@@ -304,7 +308,7 @@ def create_default_of_type(type_name: str):
             return "Invalid"
         else:
             # struct, empty struct is always nice :)
-            return {}
+            return {"@type": type_name}
 
     # FIXME: unknown, so kind of logging would be nice
     return None
@@ -312,11 +316,9 @@ def create_default_of_type(type_name: str):
 
 def render_enum_of_type(value: str, type_name: str, path: str) -> tuple[bool, typing.Any]:
     all_enum_values = list(ALL_TYPES[type_name]["values"].keys())
-    changed, selected = imgui.combo("##" + path,
-                                    all_enum_values.index(value),
-                                    all_enum_values)
+    changed, selected = imgui_util.combo_str("##" + path, value, all_enum_values)
     if changed:
-        return True, all_enum_values[selected]
+        return True, selected
     else:
         return False, value
 
