@@ -100,59 +100,25 @@ def find_ptr_match(type_name: str):
             return m
 
 
-def render_vector_of_type(value: list, type_name: str, path: str):
+def _render_container_of_type(value, type_name: str, path: str,
+                              iterate_func,
+                              naming_func,
+                              tree_node_flags,
+                              ):
     modified = False
     single_column_element = type_uses_one_column(type_name)
 
-    for i, item in enumerate(value):
-        element_path = f"{path}[{i}]"
-        changed, result = False, item
-
-        if single_column_element:
-            imgui.text(f"Item {i}")
-            imgui.next_column()
-            changed, result = render_value_of_type(item, type_name, element_path)
-            imgui.next_column()
-        else:
-            node_open = imgui.tree_node(f"Item {i} ##{element_path}", imgui.TREE_NODE_DEFAULT_OPEN)
-            if imgui.is_item_hovered():
-                imgui.set_tooltip(type_name)
-
-            imgui.next_column()
-            imgui.next_column()
-            if node_open:
-                changed, result = render_value_of_type(item, type_name, element_path)
-                imgui.tree_pop()
-
-        if changed:
-            value[i] = result
-            modified = True
-
-    with imgui.styled(imgui.STYLE_ALPHA, 0.5):
-        imgui.button("New Item")
-        imgui.next_column()
-        imgui.text("(Not Implemented)")
-        imgui.next_column()
-
-    return modified, value
-
-
-def render_dict_of_type(value: dict, type_name: str, path: str):
-    modified = False
-    single_column_element = type_uses_one_column(type_name)
-
-    for key, item in value.items():
+    for key, item in iterate_func(value):
         element_path = f"{path}[{key}]"
         changed, result = False, item
 
         if single_column_element:
-            imgui.text(key)
+            imgui.text(naming_func(key))
             imgui.next_column()
             changed, result = render_value_of_type(item, type_name, element_path)
             imgui.next_column()
-
         else:
-            node_open = imgui.tree_node(f"{key} ##{element_path}")
+            node_open = imgui.tree_node(f"{naming_func(key)} ##{element_path}", tree_node_flags)
             if imgui.is_item_hovered():
                 imgui.set_tooltip(type_name)
 
@@ -173,6 +139,24 @@ def render_dict_of_type(value: dict, type_name: str, path: str):
         imgui.next_column()
 
     return modified, value
+
+
+def render_vector_of_type(value: list, type_name: str, path: str):
+    return _render_container_of_type(
+        value, type_name, path,
+        lambda v: enumerate(v),
+        lambda k: f"Item {k}",
+        imgui.TREE_NODE_DEFAULT_OPEN,
+    )
+
+
+def render_dict_of_type(value: dict, type_name: str, path: str):
+    return _render_container_of_type(
+        value, type_name, path,
+        lambda v: v.items(),
+        lambda k: k,
+        0,
+    )
 
 
 _debug_once = set()
