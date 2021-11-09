@@ -69,15 +69,32 @@ def find_ptr_match(type_name: str):
 
 def render_vector_of_type(value: list, type_name: str, path: str):
     modified = False
+    single_column_element = type_uses_one_column(type_name)
+
     for i, item in enumerate(value):
-        if i > 0:
-            imgui.separator()
-        changed, result = render_value_of_type(item, type_name, f"{path}[{i}]")
+        element_path = f"{path}[{i}]"
+        changed, result = False, item
+
+        if single_column_element:
+            imgui.text(f"Item {i}")
+            imgui.next_column()
+            changed, result = render_value_of_type(item, type_name, element_path)
+            imgui.next_column()
+        else:
+            node_open = imgui.tree_node(f"Item {i} ##{element_path}", imgui.TREE_NODE_DEFAULT_OPEN)
+            if imgui.is_item_hovered():
+                imgui.set_tooltip(type_name)
+
+            if node_open:
+                changed, result = render_value_of_type(item, type_name, element_path)
+                imgui.tree_pop()
+                imgui.next_column()
+                imgui.next_column()
+
         if changed:
             value[i] = result
             modified = True
 
-    imgui.separator()
     with imgui.styled(imgui.STYLE_ALPHA, 0.5):
         imgui.button("New Item")
         imgui.next_column()
@@ -112,89 +129,124 @@ def render_ptr_of_type(value, type_name: str, path: str):
     return render_value_of_type(value, type_name, path)
 
 
+def type_uses_one_column(type_name: str):
+    all_types: dict[str, typing.Any] = dread_data.get_raw_types()
+
+    if type_name in KNOWN_TYPE_RENDERS:
+        return True
+
+    elif (m := vector_re.match(type_name)) is not None:
+        return False
+
+    elif (m := dict_re.match(type_name)) is not None:
+        return False
+
+    elif (m := find_ptr_match(type_name)) is not None:
+        return False
+
+    elif type_name in all_types:
+        return all_types[type_name]["fields"] is not None
+
+    else:
+        return True
+
+
+def render_enum_of_type(value, type_name: str, path: str) -> tuple[bool, typing.Any]:
+    all_types: dict[str, typing.Any] = dread_data.get_raw_types()
+
+    all_enum_values = list(all_types[type_name]["values"].keys())
+    changed, selected = imgui.combo(path,
+                                    all_enum_values.index(value),
+                                    all_enum_values)
+    if changed:
+        return True, all_enum_values[selected]
+    else:
+        return False, value
+
+
 def render_value_of_type(value, type_name: str, path: str) -> tuple[bool, typing.Any]:
     all_types: dict[str, typing.Any] = dread_data.get_raw_types()
 
     if type_name in KNOWN_TYPE_RENDERS:
         return KNOWN_TYPE_RENDERS[type_name](value, path)
 
-    elif (m := vector_re.match(type_name)) is not None:
+    if value is None:
+        # TODO
+        imgui.text("None")
+        return False, None
+
+    if (m := vector_re.match(type_name)) is not None:
         return render_vector_of_type(value, m.group(1), path)
 
-    elif (m := dict_re.match(type_name)) is not None:
+    if (m := dict_re.match(type_name)) is not None:
         return render_dict_of_type(value, m.group(1), path)
 
-    elif (m := find_ptr_match(type_name)) is not None:
+    if (m := find_ptr_match(type_name)) is not None:
         return render_ptr_of_type(value, m.group(1), path)
 
-    elif type_name in dread_data.get_raw_types():
-        modified = False
-
-        def render_type(type_data):
-            nonlocal modified
-
-            if type_data["parent"] is not None:
-                render_type(all_types[type_data["parent"]])
-
-            for field_name, field_type in type_data["fields"].items():
-                imgui.checkbox(f"##{path}.{field_name}_present", field_name in value)
-                imgui.same_line()
-
-                changed, new_field = False, None
-
-                if field_name in value:
-                    if field_type in KNOWN_TYPE_RENDERS:
-                        imgui.text(field_name)
-                        imgui.next_column()
-                        if field_name in type_data.get("read_only_fields", []):
-                            imgui.text(str(value[field_name]))
-                        else:
-                            changed, new_field = render_value_of_type(value[field_name], field_type,
-                                                                      f"{path}.{field_name}")
-                        imgui.next_column()
-
-                    elif all_types.get(field_type, {}).get("values") is not None:
-                        all_enum_values = list(all_types[field_type]["values"].keys())
-                        imgui.text(field_name)
-                        imgui.next_column()
-                        changed, selected = imgui.combo(f"##{path}.{field_name}",
-                                                        all_enum_values.index(value[field_name]),
-                                                        all_enum_values)
-                        if changed:
-                            new_field = all_enum_values[selected]
-                        imgui.next_column()
-                    else:
-                        node_open = imgui.tree_node(f"{field_name} ##{path}.{field_name}", imgui.TREE_NODE_DEFAULT_OPEN)
-                        if imgui.is_item_hovered():
-                            imgui.set_tooltip(field_type)
-
-                        if node_open:
-                            changed, new_field = render_value_of_type(value[field_name], field_type,
-                                                                      f"{path}.{field_name}")
-                            imgui.tree_pop()
-                            
-                        imgui.next_column()
-                        imgui.next_column()
-                else:
-                    imgui.text(field_name)
-                    imgui.next_column()
-                    imgui.text("<default>")
-                    imgui.next_column()
-
-                if changed:
-                    value[field_name] = new_field
-                    modified = True
-
-        if "@type" in value:
-            imgui.text(f'Type: {value["@type"]}')
-            imgui.next_column()
-            imgui.next_column()
-
-        render_type(dread_data.get_raw_types()[type_name])
-        return modified, value
-
-    else:
+    if type_name not in all_types:
         imgui.next_column()
         imgui.text(f"Unsupported render of type {type_name}")
         imgui.next_column()
         return False, value
+
+    this_type = all_types[type_name]
+
+    if this_type.get("values") is not None:
+        return render_enum_of_type(value, type_name, path)
+
+    modified = False
+
+    def render_type(type_data):
+        nonlocal modified
+
+        if type_data["parent"] is not None:
+            render_type(all_types[type_data["parent"]])
+
+        for field_name, field_type in type_data["fields"].items():
+            imgui.checkbox(f"##{path}.{field_name}_present", field_name in value)
+            imgui.same_line()
+
+            changed, new_field = False, None
+
+            if field_name in value:
+                if type_uses_one_column(field_type):
+                    imgui.text(field_name)
+                    imgui.next_column()
+                    if field_name in type_data.get("read_only_fields", []):
+                        imgui.text(str(value[field_name]))
+                    else:
+                        changed, new_field = render_value_of_type(value[field_name], field_type,
+                                                                  f"{path}.{field_name}")
+                    imgui.next_column()
+
+                else:
+                    node_open = imgui.tree_node(f"{field_name} ##{path}.{field_name}", imgui.TREE_NODE_DEFAULT_OPEN)
+                    if imgui.is_item_hovered():
+                        imgui.set_tooltip(field_type)
+
+                    if node_open:
+                        changed, new_field = render_value_of_type(value[field_name], field_type,
+                                                                  f"{path}.{field_name}")
+                        imgui.tree_pop()
+
+                    imgui.next_column()
+                    imgui.next_column()
+            else:
+                imgui.text(field_name)
+                imgui.next_column()
+                imgui.text("<default>")
+                imgui.next_column()
+
+            if changed:
+                value[field_name] = new_field
+                modified = True
+
+    if "@type" in value:
+        imgui.text(f'Type: {value["@type"]}')
+        imgui.next_column()
+        imgui.next_column()
+
+    render_type(all_types[type_name])
+    return modified, value
+
