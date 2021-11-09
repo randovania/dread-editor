@@ -1,8 +1,41 @@
+import collections
 import re
 import typing
 
 import imgui
 from mercury_engine_data_structures import dread_data
+
+ALL_TYPES: dict[str, typing.Any] = dread_data.get_raw_types()
+ALL_TYPES["CActor"]["read_only_fields"] = ["sName"]
+
+
+def _calculate_type_children():
+    result = collections.defaultdict(set)
+
+    for type_name, type_data in ALL_TYPES.items():
+        if type_data["parent"] is not None:
+            result[type_data["parent"]].add(type_name)
+
+    return dict(result)
+
+
+TYPE_CHILDREN = _calculate_type_children()
+
+
+def get_all_children_for(type_name: str):
+    result = set()
+
+    types_to_check = {type_name}
+    while types_to_check:
+        next_type = types_to_check.pop()
+
+        if next_type in result:
+            continue
+        result.add(next_type)
+
+        types_to_check.update(TYPE_CHILDREN.get(next_type, set()))
+
+    return result
 
 
 def render_bool(value, path: str):
@@ -123,10 +156,60 @@ def render_dict_of_type(value: dict, type_name: str, path: str):
     return modified, value
 
 
+_debug_once = set()
+
+
 def render_ptr_of_type(value, type_name: str, path: str):
-    if isinstance(value, dict) and "@type" in value:
-        type_name = value["@type"]
-    return render_value_of_type(value, type_name, path)
+    all_options = sorted(get_all_children_for(type_name))
+    all_options.insert(0, "None")
+
+    if value is None:
+        value_type = "None"
+
+    elif isinstance(value, dict) and "@type" in value:
+        value_type = value["@type"]
+
+    else:
+        # If it's not
+        # There
+        if len(all_options) != 2:
+            imgui.text("Expected just two options. Found:")
+            imgui.next_column()
+            imgui.combo("##" + path, 0, all_options)
+            imgui.next_column()
+            return False, value
+
+        value_type = all_options[1]
+
+    if type_uses_one_column(type_name):
+        if path not in _debug_once:
+            _debug_once.add(path)
+            print("SINGLE COLUMN?!", type_name, path)
+        # Type selector
+        changed, selected = imgui.combo("##" + path, all_options.index(value_type), all_options)
+        # TODO: actually allow to change the type, oops
+        imgui.next_column()
+
+        # Value
+        changed, result = False, None
+
+        if value_type == "None":
+            imgui.text("None")
+        else:
+            if not type_uses_one_column(value_type):
+                imgui.text(f"Expected type {value_type} to use one column")
+            else:
+                changed, result = render_value_of_type(value, value_type, f"{path}.Deref")
+
+        imgui.next_column()
+        return changed, result
+    else:
+        imgui.text("Type")
+        imgui.next_column()
+        changed, selected = imgui.combo("##" + path, all_options.index(value_type), all_options)
+        # TODO: actually allow to change the type, oops
+        imgui.next_column()
+        return render_value_of_type(value, value_type, f"{path}.Deref")
 
 
 def type_uses_one_column(type_name: str):
@@ -145,7 +228,7 @@ def type_uses_one_column(type_name: str):
         return False
 
     elif type_name in all_types:
-        return all_types[type_name]["fields"] is not None
+        return all_types[type_name]["values"] is not None
 
     else:
         return True
@@ -155,7 +238,7 @@ def render_enum_of_type(value, type_name: str, path: str) -> tuple[bool, typing.
     all_types: dict[str, typing.Any] = dread_data.get_raw_types()
 
     all_enum_values = list(all_types[type_name]["values"].keys())
-    changed, selected = imgui.combo(path,
+    changed, selected = imgui.combo("##" + path,
                                     all_enum_values.index(value),
                                     all_enum_values)
     if changed:
@@ -225,13 +308,12 @@ def render_value_of_type(value, type_name: str, path: str) -> tuple[bool, typing
                     if imgui.is_item_hovered():
                         imgui.set_tooltip(field_type)
 
+                    imgui.next_column()
+                    imgui.next_column()
                     if node_open:
                         changed, new_field = render_value_of_type(value[field_name], field_type,
                                                                   f"{path}.{field_name}")
                         imgui.tree_pop()
-
-                    imgui.next_column()
-                    imgui.next_column()
             else:
                 imgui.text(field_name)
                 imgui.next_column()
@@ -242,11 +324,5 @@ def render_value_of_type(value, type_name: str, path: str) -> tuple[bool, typing
                 value[field_name] = new_field
                 modified = True
 
-    if "@type" in value:
-        imgui.text(f'Type: {value["@type"]}')
-        imgui.next_column()
-        imgui.next_column()
-
     render_type(all_types[type_name])
     return modified, value
-

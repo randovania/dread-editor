@@ -323,8 +323,6 @@ def loop():
     current_error_message = None
     possible_brfld = []
 
-    dread_data.get_raw_types()["CActor"]["read_only_fields"] = ["sName"]
-
     with ExitStack() as stack:
         def load_romfs(path: Path):
             nonlocal pkg_editor, possible_brfld
