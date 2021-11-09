@@ -1,4 +1,5 @@
 import colorsys
+import copy
 import hashlib
 import json
 import os.path
@@ -99,6 +100,7 @@ class LevelData:
         self.display_borders = display_borders
         self.render_scale = 500.0
         self.highlighted_actors_in_canvas = []
+        self.copy_actor_name = ""
 
     @classmethod
     def open_file(cls, pkg_editor: PkgEditor, file_name: str):
@@ -157,6 +159,7 @@ class LevelData:
                                                                      self.visible_layers[layer_name])[1]
                     imgui.next_column()
                     if imgui_util.colored_tree_node(layer_name, color_for_layer(layer_name)):
+                        new_actor = None
                         for actor_name, actor in self.brfld.actors_for_layer(layer_name).items():
                             key = (layer_name, actor_name)
 
@@ -173,6 +176,19 @@ class LevelData:
 
                             if imgui.is_item_hovered():
                                 highlighted_actors_in_list.add(key)
+
+                            if imgui.begin_popup_context_item():
+                                self.copy_actor_name = imgui.input_text("New actor name", self.copy_actor_name, 500)[1]
+                                if imgui.button("Duplicate Actor"):
+                                    new_actor = copy.deepcopy(actor)
+                                    new_actor.sName = self.copy_actor_name
+                                    imgui.close_current_popup()
+                                imgui.end_popup()
+
+                        if new_actor is not None:
+                            self.brfld.actors_for_layer(layer_name)[new_actor.sName] = new_actor
+                            self.visible_actors[(layer_name, new_actor.sName)] = True
+
                         imgui.tree_pop()
                     imgui.next_column()
                 imgui.columns(1, "actor layers")
@@ -313,6 +329,11 @@ class LevelData:
 
     def apply_changes_to(self, pkg_editor: PkgEditor):
         pkg_editor.replace_asset(self.file_name, self.brfld.build())
+        for actor in self.brfld.all_actors():
+            bmsad = actor.oActorDefLink[len("actordef:"):]
+
+            for pkg_name in pkg_editor.find_pkgs(self.file_name):
+                pkg_editor.ensure_present(pkg_name, bmsad)
 
 
 current_level_data: Optional[LevelData] = None

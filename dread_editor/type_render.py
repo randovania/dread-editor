@@ -132,6 +132,8 @@ def _render_container_of_type(value, type_name: str, path: str,
     modified = False
     single_column_element = type_uses_one_column(type_name)
 
+    key_to_delete = None
+
     for key, item in iterate_func(value):
         element_path = f"{path}[{key}]"
         changed, result = False, item
@@ -156,12 +158,15 @@ def _render_container_of_type(value, type_name: str, path: str,
                 imgui.tree_pop()
 
         if delete:
-            delete_func(key)
+            key_to_delete = key
             modified = True
 
         elif changed:
             value[key] = result
             modified = True
+
+    if key_to_delete is not None:
+        delete_func(key_to_delete)
 
     new_element, new_element_func = new_item_prompt_func()
     imgui.next_column()
