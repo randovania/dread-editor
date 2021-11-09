@@ -118,11 +118,11 @@ def render_vector_of_type(value: list, type_name: str, path: str):
             if imgui.is_item_hovered():
                 imgui.set_tooltip(type_name)
 
+            imgui.next_column()
+            imgui.next_column()
             if node_open:
                 changed, result = render_value_of_type(item, type_name, element_path)
                 imgui.tree_pop()
-                imgui.next_column()
-                imgui.next_column()
 
         if changed:
             value[i] = result
@@ -139,13 +139,32 @@ def render_vector_of_type(value: list, type_name: str, path: str):
 
 def render_dict_of_type(value: dict, type_name: str, path: str):
     modified = False
+    single_column_element = type_uses_one_column(type_name)
+
     for key, item in value.items():
-        if imgui.tree_node(f"{key} ##{path}[{key}]"):
-            changed, result = render_value_of_type(item, type_name, f"{path}[{key}]")
-            if changed:
-                value[key] = result
-                modified = True
-            imgui.tree_pop()
+        element_path = f"{path}[{key}]"
+        changed, result = False, item
+
+        if single_column_element:
+            imgui.text(key)
+            imgui.next_column()
+            changed, result = render_value_of_type(item, type_name, element_path)
+            imgui.next_column()
+
+        else:
+            node_open = imgui.tree_node(f"{key} ##{element_path}")
+            if imgui.is_item_hovered():
+                imgui.set_tooltip(type_name)
+
+            imgui.next_column()
+            imgui.next_column()
+            if node_open:
+                changed, result = render_value_of_type(item, type_name, element_path)
+                imgui.tree_pop()
+
+        if changed:
+            value[key] = result
+            modified = True
 
     with imgui.styled(imgui.STYLE_ALPHA, 0.5):
         imgui.button("New Item")
