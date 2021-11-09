@@ -16,7 +16,6 @@ import imgui
 from imgui.integrations.glfw import GlfwRenderer
 from mercury_engine_data_structures import dread_data
 from mercury_engine_data_structures.formats import Brfld, Brsa, Bmscc
-from mercury_engine_data_structures.game_check import Game
 from mercury_engine_data_structures.pkg_editor import PkgEditor
 
 from dread_editor import type_render, imgui_util

@@ -5,7 +5,9 @@ import typing
 import imgui
 from mercury_engine_data_structures import dread_data
 
-ALL_TYPES: dict[str, typing.Any] = dread_data.get_raw_types()
+from dread_editor import imgui_util
+
+ALL_TYPES = typing.cast(dict[str, dict[str, typing.Any]], dread_data.get_raw_types())
 ALL_TYPES["CActor"]["read_only_fields"] = ["sName"]
 
 
@@ -216,8 +218,6 @@ def render_ptr_of_type(value, type_name: str, path: str):
 
 
 def type_uses_one_column(type_name: str):
-    all_types: dict[str, typing.Any] = dread_data.get_raw_types()
-
     if type_name in KNOWN_TYPE_RENDERS:
         return True
 
@@ -230,17 +230,15 @@ def type_uses_one_column(type_name: str):
     elif (m := find_ptr_match(type_name)) is not None:
         return False
 
-    elif type_name in all_types:
-        return all_types[type_name]["values"] is not None
+    elif type_name in ALL_TYPES:
+        return ALL_TYPES[type_name]["values"] is not None
 
     else:
         return True
 
 
 def render_enum_of_type(value, type_name: str, path: str) -> tuple[bool, typing.Any]:
-    all_types: dict[str, typing.Any] = dread_data.get_raw_types()
-
-    all_enum_values = list(all_types[type_name]["values"].keys())
+    all_enum_values = list(ALL_TYPES[type_name]["values"].keys())
     changed, selected = imgui.combo("##" + path,
                                     all_enum_values.index(value),
                                     all_enum_values)
@@ -251,8 +249,6 @@ def render_enum_of_type(value, type_name: str, path: str) -> tuple[bool, typing.
 
 
 def render_value_of_type(value, type_name: str, path: str) -> tuple[bool, typing.Any]:
-    all_types: dict[str, typing.Any] = dread_data.get_raw_types()
-
     if type_name in KNOWN_TYPE_RENDERS:
         return KNOWN_TYPE_RENDERS[type_name](value, path)
 
@@ -270,62 +266,77 @@ def render_value_of_type(value, type_name: str, path: str) -> tuple[bool, typing
     if (m := find_ptr_match(type_name)) is not None:
         return render_ptr_of_type(value, m.group(1), path)
 
-    if type_name not in all_types:
+    if type_name not in ALL_TYPES:
         imgui.next_column()
         imgui.text(f"Unsupported render of type {type_name}")
         imgui.next_column()
         return False, value
 
-    this_type = all_types[type_name]
+    this_type = ALL_TYPES[type_name]
 
     if this_type.get("values") is not None:
         return render_enum_of_type(value, type_name, path)
 
     modified = False
 
-    def render_type(type_data):
+    def render_type(current_type_name: str):
         nonlocal modified
 
+        type_data = ALL_TYPES[current_type_name]
+
         if type_data["parent"] is not None:
-            render_type(all_types[type_data["parent"]])
+            render_type(type_data["parent"])
 
         for field_name, field_type in type_data["fields"].items():
-            imgui.checkbox(f"##{path}.{field_name}_present", field_name in value)
-            imgui.same_line()
+            field_path = f"{path}.{field_name}"
+            tooltip = f"Field of class {current_type_name} of type {field_type}."
 
             changed, new_field = False, None
 
-            if field_name in value:
+            field_present = field_name in value
+            present_changed, field_present = imgui.checkbox(f"##{field_path}_present", field_present)
+            imgui.same_line()
+
+            if present_changed:
+                # TODO
+                present_changed = False
+                field_present = field_name in value
+
+            if field_present:
+                field_value = value[field_name]
+
                 if type_uses_one_column(field_type):
                     imgui.text(field_name)
-                    imgui.next_column()
-                    if field_name in type_data.get("read_only_fields", []):
-                        imgui.text(str(value[field_name]))
-                    else:
-                        changed, new_field = render_value_of_type(value[field_name], field_type,
-                                                                  f"{path}.{field_name}")
+                    imgui_util.set_hovered_tooltip(tooltip)
                     imgui.next_column()
 
+                    if field_name in type_data.get("read_only_fields", []):
+                        imgui.text(str(field_value))
+                    else:
+                        changed, new_field = render_value_of_type(field_value, field_type, field_path)
+                    imgui.next_column()
                 else:
-                    node_open = imgui.tree_node(f"{field_name} ##{path}.{field_name}", imgui.TREE_NODE_DEFAULT_OPEN)
-                    if imgui.is_item_hovered():
-                        imgui.set_tooltip(field_type)
+                    node_open = imgui.tree_node(f"{field_name} ##{field_path}", imgui.TREE_NODE_DEFAULT_OPEN)
+                    imgui_util.set_hovered_tooltip(tooltip)
 
                     imgui.next_column()
                     imgui.next_column()
                     if node_open:
-                        changed, new_field = render_value_of_type(value[field_name], field_type,
-                                                                  f"{path}.{field_name}")
+                        changed, new_field = render_value_of_type(field_value, field_type, field_path)
                         imgui.tree_pop()
             else:
                 imgui.text(field_name)
+                imgui_util.set_hovered_tooltip(tooltip)
                 imgui.next_column()
                 imgui.text("<default>")
                 imgui.next_column()
 
             if changed:
-                value[field_name] = new_field
+                if field_present:
+                    value[field_name] = new_field
+                else:
+                    value.pop(field_name, None)
                 modified = True
 
-    render_type(all_types[type_name])
+    render_type(type_name)
     return modified, value

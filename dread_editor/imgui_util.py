@@ -20,3 +20,8 @@ def with_group():
 def colored_tree_node(text: str, color, flags=0):
     with imgui.colored(imgui.COLOR_TEXT, *color):
         return imgui.tree_node(text, flags)
+
+
+def set_hovered_tooltip(tooltip: str):
+    if imgui.is_item_hovered():
+        imgui.set_tooltip(tooltip)
