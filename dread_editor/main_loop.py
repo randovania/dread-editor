@@ -123,7 +123,6 @@ class LevelData:
             x1, y1, x2, y2 = entry.data.total_boundings
             if abs(x1) > 59999 or abs(y1) > 59999 or abs(x2) > 59999 or abs(y2) > 59999:
                 if entry.name in valid_cameras:
-                    print(f"Removing {entry.name} as valid camera, boudings: {entry.data.total_boundings}")
                     valid_cameras.pop(entry.name)
                 continue
             display_borders["left"] = min(display_borders["left"], x1)
@@ -168,9 +167,18 @@ class LevelData:
             self.copy_actor_name or "",
             500
         )[1]
-        changed, new_value = imgui.slider_float2("##actor-context-position", *actor.vPos[:2], -50000, 50000)
+
+        imgui.text("Position:")
+        imgui.same_line()
+        changed, x = imgui.slider_float("##actor-context-position-x", actor.vPos[0],
+                                        self.display_borders["left"], self.display_borders["right"])
         if changed:
-            actor.vPos[:2] = new_value
+            actor.vPos[0] = x
+        imgui.same_line()
+        changed, y = imgui.slider_float("##actor-context-position-y", actor.vPos[1],
+                                        self.display_borders["top"], self.display_borders["bottom"])
+        if changed:
+            actor.vPos[1] = y
 
     def add_new_actor(self, layer_name: str, actor):
         if actor is not None:
@@ -321,22 +329,27 @@ class LevelData:
                     if (mouse.x - final_x) ** 2 + (mouse.y - final_y) ** 2 < 5 * 5:
                         self.highlighted_actors_in_canvas.append((layer_name, actor))
 
-            if self.highlighted_actors_in_canvas:
+            if self.highlighted_actors_in_canvas and imgui.is_window_hovered():
                 imgui.begin_tooltip()
                 for layer_name, actor in self.highlighted_actors_in_canvas:
                     imgui.text(f"{layer_name} - {actor.sName}")
                     if imgui.is_mouse_double_clicked(0):
                         self.visible_actors[(layer_name, actor.sName)] = True
-
-                    if len(self.highlighted_actors_in_canvas) == 1 and imgui.is_mouse_released(1):
-                        print(f"!!!!!!!!!!!!!!!!!!!!! {layer_name}_{actor.sName}")
-                        if imgui.begin_popup(f"##canvas_actor_{layer_name}_{actor.sName}",
-                                             imgui.WINDOW_ALWAYS_AUTO_RESIZE | imgui.WINDOW_NO_TITLE_BAR |
-                                             imgui.WINDOW_NO_SAVED_SETTINGS):
-                            self.render_actor_context_menu(layer_name, actor)
-                            imgui.end_popup()
-
                 imgui.end_tooltip()
+
+                if len(self.highlighted_actors_in_canvas) == 1:
+                    layer_name, actor = self.highlighted_actors_in_canvas[0]
+                    if imgui.is_mouse_released(1):
+                        print("OPEN THE POPUP!", f"canvas_actor_context_{layer_name}_{actor.sName}")
+                        imgui.open_popup(f"canvas_actor_context_{layer_name}_{actor.sName}")
+
+            for layer_name in self.brfld.all_layers():
+                for actor in self.brfld.actors_for_layer(layer_name).values():
+                    if imgui.begin_popup(f"canvas_actor_context_{layer_name}_{actor.sName}",
+                                         imgui.WINDOW_ALWAYS_AUTO_RESIZE | imgui.WINDOW_NO_TITLE_BAR |
+                                         imgui.WINDOW_NO_SAVED_SETTINGS):
+                        self.render_actor_context_menu(layer_name, actor)
+                        imgui.end_popup()
 
         imgui.end()
         return True
