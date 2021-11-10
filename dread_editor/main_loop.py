@@ -7,7 +7,6 @@ import struct
 import tkinter
 import tkinter.filedialog
 import typing
-from contextlib import ExitStack
 from pathlib import Path
 from typing import Dict, Optional
 
@@ -20,7 +19,7 @@ from mercury_engine_data_structures.pkg_editor import PkgEditor
 
 from dread_editor import type_render, imgui_util
 
-preferences: Dict[str, typing.Any] = {}
+global_preferences: Dict[str, typing.Any] = {}
 preferences_file_path = Path("preferences.json")
 all_bmsad_actordefs = []
 
@@ -28,7 +27,7 @@ all_bmsad_actordefs = []
 def save_preferences():
     try:
         with preferences_file_path.open("w") as f:
-            json.dump(preferences, f, indent=4)
+            json.dump(global_preferences, f, indent=4)
     except IOError as e:
         print(f"Unable to save preferences: {e}")
 
@@ -60,7 +59,7 @@ def get_subareas(pkg_editor: PkgEditor, brfld_path: str) -> set[str]:
 
 def impl_glfw_init():
     width, height = 1280, 720
-    window_name = "minimal ImGui/GLFW3 example"
+    window_name = "Dread Level Editor"
 
     if not glfw.init():
         print("Could not initialize OpenGL context")
@@ -91,16 +90,23 @@ def impl_glfw_init():
 class LevelData:
     def __init__(self, file_name: str, brfld: Brfld, bmscc: Bmscc, valid_cameras: dict[str, bool],
                  display_borders: dict[str, float]):
+
+        self.preferences = global_preferences.get(file_name, {})
+        global_preferences[file_name] = self.preferences
+        self.preferences["layers"] = self.preferences.get("layers", {})
+
         self.file_name = file_name
         self.brfld = brfld
         self.bmscc = bmscc
         self.visible_actors = {}
-        self.visible_layers = {layer_name: True for layer_name in brfld.all_layers()}
         self.valid_cameras = valid_cameras
         self.display_borders = display_borders
-        self.render_scale = 500.0
         self.highlighted_actors_in_canvas = []
         self.copy_actor_name = ""
+
+        for layer_name in brfld.all_layers():
+            if layer_name not in self.visible_layers:
+                self.visible_layers[layer_name] = True
 
     @classmethod
     def open_file(cls, pkg_editor: PkgEditor, file_name: str):
@@ -127,9 +133,48 @@ class LevelData:
 
         return cls(file_name, brfld, bmscc, valid_cameras, display_borders)
 
+    @property
+    def visible_layers(self) -> dict[str, bool]:
+        return self.preferences["layers"]
+
+    @property
+    def render_scale(self):
+        return self.preferences.get("render_scale", 500.0)
+
+    @render_scale.setter
+    def render_scale(self, value):
+        self.preferences["render_scale"] = value
+
     def open_actor_link(self, link: str):
         if (actor := self.brfld.follow_link(link)) is not None:
             layer_name = link.split(":")[4]
+            print(actor)
+            self.visible_actors[(layer_name, actor.sName)] = True
+
+    def render_actor_context_menu(self, layer_name: str, actor):
+        if self.copy_actor_name is None:
+            self.copy_actor_name = f"{actor.sName}_Copy"
+
+        if imgui.button("Duplicate Actor"):
+            new_actor = copy.deepcopy(actor)
+            new_actor.sName = self.copy_actor_name
+            self.add_new_actor(layer_name, new_actor)
+            imgui.close_current_popup()
+            self.copy_actor_name = None
+
+        imgui.same_line()
+        self.copy_actor_name = imgui.input_text(
+            "New actor name",
+            self.copy_actor_name or "",
+            500
+        )[1]
+        changed, new_value = imgui.slider_float2("##actor-context-position", *actor.vPos[:2], -50000, 50000)
+        if changed:
+            actor.vPos[:2] = new_value
+
+    def add_new_actor(self, layer_name: str, actor):
+        if actor is not None:
+            self.brfld.actors_for_layer(layer_name)[actor.sName] = actor
             self.visible_actors[(layer_name, actor.sName)] = True
 
     def render_window(self, current_scale):
@@ -155,12 +200,16 @@ class LevelData:
                 imgui.columns(2, "actor layers")
                 imgui.set_column_width(-1, 20 * current_scale)
                 for layer_name in self.brfld.raw.Root.pScenario.rEntitiesLayer.dctSublayers:
-                    self.visible_layers[layer_name] = imgui.checkbox(f"##{layer_name}_visible",
-                                                                     self.visible_layers[layer_name])[1]
+                    changed, self.visible_layers[layer_name] = imgui.checkbox(f"##{layer_name}_visible",
+                                                                              self.visible_layers[layer_name])
+                    if changed:
+                        save_preferences()
+
                     imgui.next_column()
                     if imgui_util.colored_tree_node(layer_name, color_for_layer(layer_name)):
-                        new_actor = None
-                        for actor_name, actor in self.brfld.actors_for_layer(layer_name).items():
+                        actors = self.brfld.actors_for_layer(layer_name)
+
+                        for actor_name, actor in sorted(actors.items(), key=lambda it: it[0]):
                             key = (layer_name, actor_name)
 
                             def do_item():
@@ -178,16 +227,8 @@ class LevelData:
                                 highlighted_actors_in_list.add(key)
 
                             if imgui.begin_popup_context_item():
-                                self.copy_actor_name = imgui.input_text("New actor name", self.copy_actor_name, 500)[1]
-                                if imgui.button("Duplicate Actor"):
-                                    new_actor = copy.deepcopy(actor)
-                                    new_actor.sName = self.copy_actor_name
-                                    imgui.close_current_popup()
+                                self.render_actor_context_menu(layer_name, actor)
                                 imgui.end_popup()
-
-                        if new_actor is not None:
-                            self.brfld.actors_for_layer(layer_name)[new_actor.sName] = new_actor
-                            self.visible_actors[(layer_name, new_actor.sName)] = True
 
                         imgui.tree_pop()
                     imgui.next_column()
@@ -287,6 +328,14 @@ class LevelData:
                     if imgui.is_mouse_double_clicked(0):
                         self.visible_actors[(layer_name, actor.sName)] = True
 
+                    if len(self.highlighted_actors_in_canvas) == 1 and imgui.is_mouse_released(1):
+                        print(f"!!!!!!!!!!!!!!!!!!!!! {layer_name}_{actor.sName}")
+                        if imgui.begin_popup(f"##canvas_actor_{layer_name}_{actor.sName}",
+                                             imgui.WINDOW_ALWAYS_AUTO_RESIZE | imgui.WINDOW_NO_TITLE_BAR |
+                                             imgui.WINDOW_NO_SAVED_SETTINGS):
+                            self.render_actor_context_menu(layer_name, actor)
+                            imgui.end_popup()
+
                 imgui.end_tooltip()
 
         imgui.end()
@@ -314,26 +363,28 @@ class LevelData:
             imgui.text("Actor Groups")
             link_for_actor = f"Root:pScenario:rEntitiesLayer:dctSublayers:{layer_name}:dctActors:{actor_name}"
 
-            actor_groups = typing.cast(dict[str, list[str]],
-                                       self.brfld.raw.Root.pScenario.rEntitiesLayer.dctActorGroups)
-            for group_name, group_elements in actor_groups.items():
-                changed, present = imgui.checkbox(f"{group_name} ##actor_group.{group_name}",
-                                                  link_for_actor in group_elements)
-                if changed:
-                    if present:
-                        group_elements.append(link_for_actor)
-                    else:
-                        group_elements.remove(link_for_actor)
+            with imgui_util.with_child("##ActorGroups", 0, 300 * current_scale,
+                                       imgui.WINDOW_ALWAYS_VERTICAL_SCROLLBAR):
+                actor_groups = typing.cast(dict[str, list[str]],
+                                           self.brfld.raw.Root.pScenario.rEntitiesLayer.dctActorGroups)
+                for group_name, group_elements in sorted(actor_groups.items(), key=lambda it: it[0]):
+                    changed, present = imgui.checkbox(f"{group_name} ##actor_group.{group_name}",
+                                                      link_for_actor in group_elements)
+                    if changed:
+                        if present:
+                            group_elements.append(link_for_actor)
+                        else:
+                            group_elements.remove(link_for_actor)
 
             imgui.end()
 
     def apply_changes_to(self, pkg_editor: PkgEditor):
         pkg_editor.replace_asset(self.file_name, self.brfld.build())
-        for actor in self.brfld.all_actors():
-            bmsad = actor.oActorDefLink[len("actordef:"):]
-
-            for pkg_name in pkg_editor.find_pkgs(self.file_name):
-                pkg_editor.ensure_present(pkg_name, bmsad)
+        # for actor in self.brfld.all_actors():
+        #     bmsad = actor.oActorDefLink[len("actordef:"):]
+        #
+        #     for pkg_name in pkg_editor.find_pkgs(self.file_name):
+        #         pkg_editor.ensure_present(pkg_name, bmsad)
 
 
 current_level_data: Optional[LevelData] = None
@@ -343,6 +394,7 @@ def render_actor_link(value: str, path: str):
     if isinstance(value, str) and value.startswith("Root") and current_level_data is not None:
         if imgui.button(value):
             current_level_data.open_actor_link(value)
+        imgui_util.set_hovered_tooltip(value)
     else:
         imgui.text(str(value))
     return False, None
@@ -369,125 +421,110 @@ def loop():
     window = impl_glfw_init()
     impl = GlfwRenderer(window)
 
-    global preferences, current_level_data
+    global global_preferences, current_level_data
     if preferences_file_path.exists():
-        preferences = json.loads(preferences_file_path.read_text())
+        global_preferences = json.loads(preferences_file_path.read_text())
 
     pkg_editor: Optional[PkgEditor] = None
     current_error_message = None
     possible_brfld = []
 
-    with ExitStack() as stack:
-        def load_romfs(path: Path):
-            nonlocal pkg_editor, possible_brfld
-            stack.close()
-            pkg_editor = stack.enter_context(PkgEditor.open_pkgs_at(path))
-            possible_brfld = [
-                asset_name
-                for asset_name in pkg_editor.all_asset_names()
-                if asset_name.endswith("brfld")
-            ]
-            possible_brfld.sort()
-            all_bmsad_actordefs.clear()
-            all_bmsad_actordefs.extend([
-                f"actordef:{asset_name}"
-                for asset_name in pkg_editor.all_asset_names()
-                if asset_name.endswith("bmsad")
-            ])
-            all_bmsad_actordefs.sort()
+    def load_romfs(path: Path):
+        nonlocal pkg_editor, possible_brfld
+        pkg_editor = PkgEditor(path)
+        possible_brfld = [
+            asset_name
+            for asset_name in pkg_editor.all_asset_names()
+            if asset_name.endswith("brfld")
+        ]
+        possible_brfld.sort()
+        all_bmsad_actordefs.clear()
+        all_bmsad_actordefs.extend([
+            f"actordef:{asset_name}"
+            for asset_name in pkg_editor.all_asset_names()
+            if asset_name.endswith("bmsad")
+        ])
 
-            preferences["last_romfs"] = str(path)
+        all_bmsad_actordefs.append(
+            "actordef:actors/items/powerup_wavebeam/charclasses/powerup_wavebeam.bmsad"
+        )
+        all_bmsad_actordefs.sort()
+
+        global_preferences["last_romfs"] = str(path)
+        save_preferences()
+
+    if global_preferences.get("last_romfs") is not None:
+        try:
+            load_romfs(Path(global_preferences["last_romfs"]))
+        except Exception as e:
+            print(f"Unable to re-open last romfs: {e}")
+            global_preferences["last_romfs"] = None
             save_preferences()
 
-        if preferences.get("last_romfs") is not None:
-            try:
-                load_romfs(Path(preferences["last_romfs"]))
-            except Exception as e:
-                print(f"Unable to re-open last romfs: {e}")
-                preferences["last_romfs"] = None
-                save_preferences()
+    while not glfw.window_should_close(window):
+        glfw.poll_events()
+        impl.process_inputs()
+        current_scale = glfw.get_window_content_scale(window)[0]
+        imgui.get_io().font_global_scale = current_scale
 
-        while not glfw.window_should_close(window):
-            glfw.poll_events()
-            impl.process_inputs()
-            current_scale = glfw.get_window_content_scale(window)[0]
-            imgui.get_io().font_global_scale = current_scale
+        imgui.new_frame()
 
-            imgui.new_frame()
+        if current_error_message is not None:
+            imgui.open_popup("Error")
+            if imgui.begin_popup_modal("Error")[0]:
+                imgui.text(current_error_message)
+                if imgui.button("Ok"):
+                    current_error_message = None
+                imgui.end_popup()
 
-            if current_error_message is not None:
-                imgui.open_popup("Error")
-                if imgui.begin_popup_modal("Error")[0]:
-                    imgui.text(current_error_message)
-                    if imgui.button("Ok"):
-                        current_error_message = None
-                    imgui.end_popup()
+        if imgui.begin_main_menu_bar():
+            if imgui.begin_menu("File", True):
+                if imgui.menu_item("Select extracted Metroid Dread root")[0]:
+                    f = prompt_file(directory=True)
+                    if f:
+                        load_romfs(Path(f))
 
-            if imgui.begin_main_menu_bar():
-                if imgui.begin_menu("File", True):
-                    if imgui.menu_item("Select extracted Metroid Dread root")[0]:
-                        f = prompt_file(directory=True)
-                        if f:
-                            load_romfs(Path(f))
+                imgui.text_disabled(f'* Current root: {global_preferences.get("last_romfs")}')
+                imgui.separator()
 
-                    imgui.text_disabled(f'* Current root: {preferences.get("last_romfs")}')
-                    imgui.separator()
+                if imgui.menu_item("Save changes")[0]:
+                    if pkg_editor is None:
+                        current_error_message = "Unable to save, no root selected."
+                    else:
+                        if current_level_data is not None:
+                            current_level_data.apply_changes_to(pkg_editor)
+                        pkg_editor.save_modified_pkgs()
 
-                    if imgui.menu_item("Select output path")[0]:
-                        f = prompt_file(directory=True)
-                        if f:
-                            preferences["output_path"] = f
-                            save_preferences()
+                imgui.end_menu()
 
-                    imgui.text_disabled(f'* Current output path: {preferences.get("output_path")}')
-                    imgui.separator()
+            if imgui.begin_menu("Select level file", len(possible_brfld) > 0):
+                current_file_name = None
+                if current_level_data is not None:
+                    current_file_name = current_level_data.file_name
 
-                    changed, new_value = imgui.checkbox("Read files from output path first",
-                                                        preferences.get("read_output", False))
-                    if changed:
-                        preferences["read_output"] = new_value
-                        save_preferences()
+                for name in possible_brfld:
+                    if imgui.menu_item(name, "", name == current_file_name)[0]:
+                        current_level_data = LevelData.open_file(pkg_editor, name)
 
-                    if imgui.menu_item("Save changes")[0]:
-                        if pkg_editor is None:
-                            current_error_message = "Unable to save, no root selected."
-                        elif preferences.get("output_path") is None:
-                            current_error_message = "Unable to save, no output path."
-                        else:
-                            if current_level_data is not None:
-                                current_level_data.apply_changes_to(pkg_editor)
-                            pkg_editor.save_modified_pkgs(Path(preferences["output_path"]))
+                imgui.end_menu()
 
-                    imgui.end_menu()
+            imgui.end_main_menu_bar()
 
-                if imgui.begin_menu("Select level file", len(possible_brfld) > 0):
-                    current_file_name = None
-                    if current_level_data is not None:
-                        current_file_name = current_level_data.file_name
+        if current_level_data is not None:
+            if not current_level_data.render_window(current_scale):
+                current_level_data = None
 
-                    for name in possible_brfld:
-                        if imgui.menu_item(name, "", name == current_file_name)[0]:
-                            current_level_data = LevelData.open_file(pkg_editor, name)
+        if current_level_data is not None:
+            current_level_data.draw_visible_actors(current_scale)
 
-                    imgui.end_menu()
+        imgui.show_test_window()
 
-                imgui.end_main_menu_bar()
+        gl.glClearColor(0, 0, 0, 1)
+        gl.glClear(gl.GL_COLOR_BUFFER_BIT)
 
-            if current_level_data is not None:
-                if not current_level_data.render_window(current_scale):
-                    current_level_data = None
-
-            if current_level_data is not None:
-                current_level_data.draw_visible_actors(current_scale)
-
-            imgui.show_test_window()
-
-            gl.glClearColor(0, 0, 0, 1)
-            gl.glClear(gl.GL_COLOR_BUFFER_BIT)
-
-            imgui.render()
-            impl.render(imgui.get_draw_data())
-            glfw.swap_buffers(window)
+        imgui.render()
+        impl.render(imgui.get_draw_data())
+        glfw.swap_buffers(window)
 
     impl.shutdown()
     glfw.terminate()
