@@ -143,6 +143,7 @@ class LevelData:
     @render_scale.setter
     def render_scale(self, value):
         self.preferences["render_scale"] = value
+        save_preferences()
 
     def open_actor_link(self, link: str):
         if (actor := self.brfld.follow_link(link)) is not None:
@@ -257,7 +258,10 @@ class LevelData:
         imgui.same_line()
 
         with imgui_util.with_child("##Canvas", 0, 0):
-            self.render_scale = imgui.slider_float("Scale", self.render_scale, 100, 1000)[1]
+            changed, new_scale = imgui.slider_float("Scale", self.render_scale, 100, 1000)
+            if changed:
+                self.render_scale = new_scale
+
             self.display_borders["left"], self.display_borders["right"] = imgui.slider_float2(
                 "Left and right borders",
                 self.display_borders["left"],
@@ -344,7 +348,7 @@ class LevelData:
                         imgui.open_popup(f"canvas_actor_context_{layer_name}_{actor.sName}")
 
             for layer_name in self.brfld.all_layers():
-                for actor in self.brfld.actors_for_layer(layer_name).values():
+                for actor in list(self.brfld.actors_for_layer(layer_name).values()):
                     if imgui.begin_popup(f"canvas_actor_context_{layer_name}_{actor.sName}",
                                          imgui.WINDOW_ALWAYS_AUTO_RESIZE | imgui.WINDOW_NO_TITLE_BAR |
                                          imgui.WINDOW_NO_SAVED_SETTINGS):
