@@ -517,7 +517,7 @@ def loop():
         if current_level_data is not None:
             current_level_data.draw_visible_actors(current_scale)
 
-        imgui.show_test_window()
+        # imgui.show_test_window()
 
         gl.glClearColor(0, 0, 0, 1)
         gl.glClear(gl.GL_COLOR_BUFFER_BIT)
