@@ -1,45 +1,10 @@
-import collections
 import re
 import typing
 
 import imgui
-from mercury_engine_data_structures import dread_data
 from mercury_engine_data_structures.formats import dread_types
 
-from dread_editor import imgui_util
-
-ALL_TYPES = typing.cast(dict[str, dict[str, typing.Any]], dread_data.get_raw_types())
-ALL_TYPES["CActor"]["read_only_fields"] = ["sName"]
-
-
-def _calculate_type_children():
-    result = collections.defaultdict(set)
-
-    for type_name, type_data in ALL_TYPES.items():
-        if type_data["parent"] is not None:
-            result[type_data["parent"]].add(type_name)
-
-    return dict(result)
-
-
-TYPE_CHILDREN = _calculate_type_children()
-
-
-def get_all_children_for(type_name: str):
-    result = set()
-
-    types_to_check = {type_name}
-    while types_to_check:
-        next_type = types_to_check.pop()
-
-        if next_type in result:
-            continue
-        result.add(next_type)
-
-        types_to_check.update(TYPE_CHILDREN.get(next_type, set()))
-
-    return result
-
+from dread_editor import imgui_util, type_lib
 
 TEMPORARY_ACTORS = {}
 
@@ -229,7 +194,7 @@ def print_once(path, msg):
 
 
 def render_ptr_of_type(value, type_name: str, path: str):
-    all_options = sorted(get_all_children_for(type_name))
+    all_options = sorted(type_lib.get_all_children_for(type_name))
     all_options.insert(0, "None")
 
     if value is None:
@@ -302,8 +267,8 @@ def type_uses_one_column(type_name: str):
     if (m := find_ptr_match(type_name)) is not None:
         return False
 
-    if type_name in ALL_TYPES:
-        return ALL_TYPES[type_name]["values"] is not None
+    if type_lib.is_enum(type_name):
+        return True
 
     # FIXME: unknown, so kind of logging would be nice
     return True
@@ -322,21 +287,19 @@ def create_default_of_type(type_name: str):
     if (m := find_ptr_match(type_name)) is not None:
         return None
 
-    if type_name in ALL_TYPES:
-        type_data = ALL_TYPES[type_name]
-        if type_data["values"] is not None:
-            # enum
-            return "Invalid"
-        else:
-            # struct, empty struct is always nice :)
-            return {"@type": type_name}
+    if type_lib.is_enum(type_name):
+        return "Invalid"
+
+    if type_lib.is_struct(type_name):
+        # struct, empty struct is always nice :)
+        return {"@type": type_name}
 
     # FIXME: unknown, so kind of logging would be nice
     return None
 
 
 def render_enum_of_type(value: str, type_name: str, path: str) -> tuple[bool, typing.Any]:
-    all_enum_values = list(ALL_TYPES[type_name]["values"].keys())
+    all_enum_values = list(type_lib.get_type_data(type_name)["values"].keys())
     changed, selected = imgui_util.combo_str("##" + path, value, all_enum_values)
     if changed:
         return True, selected
@@ -357,15 +320,13 @@ def render_value_of_type(value, type_name: str, path: str) -> tuple[bool, typing
     if (m := find_ptr_match(type_name)) is not None:
         return render_ptr_of_type(value, m.group(1), path)
 
-    if type_name not in ALL_TYPES:
+    if not type_lib.is_known_type(type_name):
         imgui.next_column()
         imgui.text(f"Unsupported render of type {type_name}")
         imgui.next_column()
         return False, value
 
-    this_type = ALL_TYPES[type_name]
-
-    if this_type.get("values") is not None:
+    if type_lib.is_enum(type_name):
         return render_enum_of_type(value, type_name, path)
 
     modified = False
@@ -373,7 +334,7 @@ def render_value_of_type(value, type_name: str, path: str) -> tuple[bool, typing
     def render_type(current_type_name: str):
         nonlocal modified
 
-        type_data = ALL_TYPES[current_type_name]
+        type_data = type_lib.get_type_data(current_type_name)
 
         if type_data["parent"] is not None:
             render_type(type_data["parent"])
