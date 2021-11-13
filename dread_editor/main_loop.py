@@ -16,12 +16,16 @@ import construct
 import glfw
 import imgui
 from imgui.integrations.glfw import GlfwRenderer
+from mercury_engine_data_structures import type_lib
 from mercury_engine_data_structures.formats import Brfld, Brsa, Bmscc
 from mercury_engine_data_structures.pkg_editor import PkgEditor
+from mercury_engine_data_structures.type_lib import BaseType
 
 from dread_editor import type_render, imgui_util
+from dread_editor.type_render import TypeTreeRender, SpecificTypeRender
 
 global_preferences: Dict[str, typing.Any] = {}
+tree_render = TypeTreeRender()
 preferences_file_path = Path("preferences.json")
 all_bmsad_actordefs = []
 
@@ -377,7 +381,10 @@ class LevelData:
 
             actor = self.brfld.actors_for_layer(layer_name)[actor_name]
             imgui.columns(2, "actor details")
-            type_render.render_value_of_type(actor, actor["@type"], f"{self.file_name}.{layer_name}.{actor_name}")
+            tree_render.render_value_of_type(
+                actor, type_lib.get_type(actor["@type"]),
+                f"{self.file_name}.{layer_name}.{actor_name}",
+            )
             imgui.columns(1, "actor details")
 
             imgui.separator()
@@ -429,30 +436,44 @@ class LevelData:
 current_level_data: Optional[LevelData] = None
 
 
-def render_actor_link(value: str, path: str):
-    if isinstance(value, str) and value.startswith("Root") and current_level_data is not None:
-        if imgui.button(value):
-            current_level_data.open_actor_link(value)
-        imgui_util.set_hovered_tooltip(value)
-    else:
-        imgui.text(str(value))
-    return False, None
+class GameLinkRender(SpecificTypeRender):
+    def uses_one_column(self, type_data: BaseType):
+        return True
+
+    def create_default(self, type_data: BaseType):
+        return "<EMPTY>"
+
+    def render_value(self, value: typing.Any, type_data: BaseType, path: str):
+        if isinstance(value, str) and value.startswith("Root") and current_level_data is not None:
+            if imgui.button(value):
+                current_level_data.open_actor_link(value)
+            imgui_util.set_hovered_tooltip(value)
+        else:
+            imgui.text(str(value))
+        return False, None
 
 
 for k in ["CGameLink<CActor>", "CGameLink<CEntity>", "CGameLink<CSpawnPointComponent>"]:
-    type_render.KNOWN_TYPE_RENDERS[k] = render_actor_link
+    tree_render.specific_renders[k] = GameLinkRender()
 
 
-def render_asset_link(value: str, path: str):
-    if path.endswith(".oActorDefLink"):
-        result = imgui_util.combo_str(f"##{path}", value, all_bmsad_actordefs)
-        imgui_util.set_hovered_tooltip(value)
-        return result
-    else:
-        return type_render.render_string(value, path)
+class AssetLinkRender(SpecificTypeRender):
+    def uses_one_column(self, type_data: BaseType):
+        return True
+
+    def create_default(self, type_data: BaseType):
+        return all_bmsad_actordefs[0]
+
+    def render_value(self, value: typing.Any, type_data: BaseType, path: str):
+        if path.endswith(".oActorDefLink"):
+            result = imgui_util.combo_str(f"##{path}", value, all_bmsad_actordefs)
+            imgui_util.set_hovered_tooltip(value)
+            return result
+        else:
+            return type_render.render_string(value, path)
 
 
-type_render.KNOWN_TYPE_RENDERS["base::core::CAssetLink"] = render_asset_link
+tree_render.specific_renders["base::core::CAssetLink"] = AssetLinkRender()
 
 
 def draw_temporary_actors(temporary_actors: dict[str, construct.Container], current_scale: float):
@@ -465,7 +486,7 @@ def draw_temporary_actors(temporary_actors: dict[str, construct.Container], curr
             continue
 
         imgui.columns(2, "actor details")
-        type_render.render_value_of_type(actor, "CActor", f"{path}.actor")
+        tree_render.render_value_of_type(actor, "CActor", f"{path}.actor")
         imgui.columns(1, "actor details")
         imgui.end()
 
