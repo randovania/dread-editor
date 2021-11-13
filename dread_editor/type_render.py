@@ -4,6 +4,7 @@ import typing
 
 import imgui
 from mercury_engine_data_structures import dread_data
+from mercury_engine_data_structures.formats import dread_types
 
 from dread_editor import imgui_util
 
@@ -40,6 +41,9 @@ def get_all_children_for(type_name: str):
     return result
 
 
+TEMPORARY_ACTORS = {}
+
+
 def render_bool(value, path: str):
     return imgui.checkbox(f"##{path}", value)
 
@@ -61,8 +65,10 @@ def render_float_vector(value, path: str):
     return functions[len(value)](f"##{path}", *value)
 
 
-def render_typed_value(value, path: str):
+def render_typed_value(value: bytes, path: str):
     imgui.text(str(value))
+    if imgui.button(f"Read as CActor ##{path}"):
+        TEMPORARY_ACTORS[path] = dread_types.CActor.parse(value)
     return False, value
 
 

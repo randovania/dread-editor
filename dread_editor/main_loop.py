@@ -2,6 +2,7 @@ import colorsys
 import copy
 import hashlib
 import json
+import logging
 import os.path
 import struct
 import tkinter
@@ -11,6 +12,7 @@ from pathlib import Path
 from typing import Dict, Optional
 
 import OpenGL.GL as gl
+import construct
 import glfw
 import imgui
 from imgui.integrations.glfw import GlfwRenderer
@@ -102,6 +104,7 @@ class LevelData:
         self.valid_cameras = valid_cameras
         self.display_borders = display_borders
         self.highlighted_actors_in_canvas = []
+        self.current_actor_filter = ""
         self.copy_actor_name = ""
 
         for layer_name in brfld.all_layers():
@@ -171,15 +174,13 @@ class LevelData:
 
         imgui.text("Position:")
         imgui.same_line()
-        changed, x = imgui.slider_float("##actor-context-position-x", actor.vPos[0],
-                                        self.display_borders["left"], self.display_borders["right"])
-        if changed:
-            actor.vPos[0] = x
+        changed_x, x = imgui.slider_float("##actor-context-position-x", actor.vPos[0],
+                                          self.display_borders["left"], self.display_borders["right"])
         imgui.same_line()
-        changed, y = imgui.slider_float("##actor-context-position-y", actor.vPos[1],
-                                        self.display_borders["top"], self.display_borders["bottom"])
-        if changed:
-            actor.vPos[1] = y
+        changed_y, y = imgui.slider_float("##actor-context-position-y", actor.vPos[1],
+                                          self.display_borders["top"], self.display_borders["bottom"])
+        if changed_x or changed_y:
+            actor.vPos = (x, y, actor.vPos[2])
 
     def add_new_actor(self, layer_name: str, actor):
         if actor is not None:
@@ -206,6 +207,7 @@ class LevelData:
             imgui.text("Actor Layers")
             with imgui_util.with_child("##ActorLayers", 300 * current_scale, 0,
                                        imgui.WINDOW_ALWAYS_VERTICAL_SCROLLBAR):
+                self.update_actor_filter()
                 imgui.columns(2, "actor layers")
                 imgui.set_column_width(-1, 20 * current_scale)
                 for layer_name in self.brfld.raw.Root.pScenario.rEntitiesLayer.dctSublayers:
@@ -220,6 +222,8 @@ class LevelData:
 
                         for actor_name, actor in sorted(actors.items(), key=lambda it: it[0]):
                             key = (layer_name, actor_name)
+                            if not self.passes_actor_filter(actor_name):
+                                continue
 
                             def do_item():
                                 self.visible_actors[key] = imgui.checkbox(
@@ -373,7 +377,7 @@ class LevelData:
 
             actor = self.brfld.actors_for_layer(layer_name)[actor_name]
             imgui.columns(2, "actor details")
-            type_render.render_value_of_type(actor, actor["@type"], f"{layer_name}.{actor_name}")
+            type_render.render_value_of_type(actor, actor["@type"], f"{self.file_name}.{layer_name}.{actor_name}")
             imgui.columns(1, "actor details")
 
             imgui.separator()
@@ -402,6 +406,24 @@ class LevelData:
         #
         #     for pkg_name in pkg_editor.find_pkgs(self.file_name):
         #         pkg_editor.ensure_present(pkg_name, bmsad)
+
+    def update_actor_filter(self):
+        self.current_actor_filter = imgui.input_text("Filter", self.current_actor_filter, 500)[1]
+
+    def passes_actor_filter(self, actor_name: str) -> bool:
+        if not self.current_actor_filter:
+            return True
+
+        for criteria in self.current_actor_filter.split(","):
+            criteria = criteria.strip()
+            if criteria[0] == "-":
+                if criteria[1:] in actor_name:
+                    return False
+            else:
+                if criteria not in actor_name:
+                    return False
+
+        return True
 
 
 current_level_data: Optional[LevelData] = None
@@ -433,6 +455,21 @@ def render_asset_link(value: str, path: str):
 type_render.KNOWN_TYPE_RENDERS["base::core::CAssetLink"] = render_asset_link
 
 
+def draw_temporary_actors(temporary_actors: dict[str, construct.Container], current_scale: float):
+    for path, actor in list(temporary_actors.items()):
+        imgui.set_next_window_size(300 * current_scale, 200 * current_scale, imgui.FIRST_USE_EVER)
+        active = imgui.begin(f"{path} ##{path}.actor_window", True)[1]
+        if not active:
+            temporary_actors.pop(path)
+            imgui.end()
+            continue
+
+        imgui.columns(2, "actor details")
+        type_render.render_value_of_type(actor, "CActor", f"{path}.actor")
+        imgui.columns(1, "actor details")
+        imgui.end()
+
+
 def loop():
     imgui.create_context()
     window = impl_glfw_init()
@@ -462,9 +499,6 @@ def loop():
             if asset_name.endswith("bmsad")
         ])
 
-        all_bmsad_actordefs.append(
-            "actordef:actors/items/powerup_wavebeam/charclasses/powerup_wavebeam.bmsad"
-        )
         all_bmsad_actordefs.sort()
 
         global_preferences["last_romfs"] = str(path)
@@ -474,7 +508,7 @@ def loop():
         try:
             load_romfs(Path(global_preferences["last_romfs"]))
         except Exception as e:
-            print(f"Unable to re-open last romfs: {e}")
+            logging.exception(f"Unable to re-open last romfs: {e}")
             global_preferences["last_romfs"] = None
             save_preferences()
 
@@ -533,6 +567,8 @@ def loop():
 
         if current_level_data is not None:
             current_level_data.draw_visible_actors(current_scale)
+
+        draw_temporary_actors(type_render.TEMPORARY_ACTORS, current_scale)
 
         # imgui.show_test_window()
 
