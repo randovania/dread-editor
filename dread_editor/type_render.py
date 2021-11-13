@@ -10,8 +10,6 @@ from mercury_engine_data_structures.type_lib import (
 
 from dread_editor import imgui_util
 
-TEMPORARY_ACTORS = {}
-
 
 def render_bool(value, path: str):
     return imgui.checkbox(f"##{path}", value)
