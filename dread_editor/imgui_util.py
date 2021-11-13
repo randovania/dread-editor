@@ -22,6 +22,13 @@ def colored_tree_node(text: str, color, flags=0):
         return imgui.tree_node(text, flags)
 
 
+def tree_node_with_column(text: str, flags=0):
+    result = imgui.tree_node(text, flags)
+    imgui.next_column()
+    imgui.next_column()
+    return result
+
+
 def set_hovered_tooltip(tooltip: str):
     if imgui.is_item_hovered():
         imgui.set_tooltip(tooltip)

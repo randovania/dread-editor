@@ -12,6 +12,7 @@ import imgui
 from imgui.integrations.glfw import GlfwRenderer
 from mercury_engine_data_structures import type_lib
 from mercury_engine_data_structures.formats import Bmsad
+from mercury_engine_data_structures.formats.bmsad import find_charclass_for_type
 from mercury_engine_data_structures.pkg_editor import PkgEditor
 from mercury_engine_data_structures.type_lib import BaseType
 
@@ -170,23 +171,57 @@ def draw_open_bmsad(current_scale: float):
                 prop.sub_actors = new_field
             imgui.tree_pop()
 
-        node_open = imgui.tree_node("Components", imgui.TREE_NODE_DEFAULT_OPEN)
-        imgui.next_column()
-        imgui.next_column()
-        if node_open:
+        if imgui_util.tree_node_with_column("Components", imgui.TREE_NODE_DEFAULT_OPEN):
             if isinstance(prop.components, construct.Container):
                 for component_key, component in prop.components.items():
-                    component_open = imgui.tree_node(component_key)
-                    imgui.next_column()
-                    imgui.next_column()
-                    if component_open:
+                    if imgui_util.tree_node_with_column(component_key):
                         imgui.text("Type")
                         imgui.next_column()
                         imgui.text(component.type)
                         imgui.next_column()
 
-                        if imgui.tree_node("Raw"):
+                        # Fields
+                        if component.fields is not None and imgui_util.tree_node_with_column(
+                                f"Fields ##{component_key}_fields", imgui.TREE_NODE_DEFAULT_OPEN):
+                            changed, new_field = bmsad_tree_render.render_value_of_type(
+                                component.fields.fields,
+                                type_lib.get_type(find_charclass_for_type(component.type)),
+                                f"{component_key}"
+                            )
+                            if changed:
+                                component.fields.fields = new_field
+                            imgui.tree_pop()
+
+                        # Extra Fields
+                        if imgui_util.tree_node_with_column("Extra Fields", imgui.TREE_NODE_DEFAULT_OPEN):
+                            imgui.text(str(component.extra_fields))
+                            imgui.tree_pop()
+
+                        # Functions
+                        if imgui_util.tree_node_with_column("Functions", imgui.TREE_NODE_DEFAULT_OPEN):
+                            for i, function in enumerate(component.functions):
+                                node_open = imgui_util.tree_node_with_column(
+                                    f"{function.name}##{component_key}_functions_{i}", imgui.TREE_NODE_DEFAULT_OPEN)
+                                if node_open:
+                                    for param_name, param in function.params.items():
+                                        imgui.text(param_name)
+                                        imgui.next_column()
+                                        imgui.text(str(param.value))
+                                        imgui.next_column()
+                                    imgui.tree_pop()
+                            imgui.tree_pop()
+
+                        if component.dependencies is not None and imgui_util.tree_node_with_column(
+                                "Dependencies", imgui.TREE_NODE_DEFAULT_OPEN):
+                            imgui.next_column()
+                            imgui.text(str(component.dependencies))
+                            imgui.next_column()
+                            imgui.tree_pop()
+
+                        if imgui_util.tree_node_with_column("Raw"):
+                            imgui.next_column()
                             imgui.text(str(component))
+                            imgui.next_column()
                             imgui.tree_pop()
 
                         imgui.tree_pop()
