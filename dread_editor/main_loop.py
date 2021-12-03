@@ -13,7 +13,7 @@ from imgui.integrations.glfw import GlfwRenderer
 from mercury_engine_data_structures import type_lib
 from mercury_engine_data_structures.formats import Bmsad
 from mercury_engine_data_structures.formats.bmsad import find_charclass_for_type
-from mercury_engine_data_structures.pkg_editor import PkgEditor
+from mercury_engine_data_structures.file_tree_editor import FileTreeEditor
 from mercury_engine_data_structures.type_lib import BaseType
 
 from dread_editor import type_render, imgui_util
@@ -28,6 +28,7 @@ nested_bmsad: PathsByDirectory = {}
 all_bmsad_actordefs: list[str] = []
 
 open_bmsad: dict[str, Bmsad] = {}
+glfw_window = None
 
 bmsad_tree_render = TypeTreeRender()
 
@@ -87,7 +88,14 @@ class AssetLinkRender(SpecificTypeRender):
     def render_value(self, value: typing.Any, type_data: BaseType, path: str):
         if path.endswith(".oActorDefLink"):
             result = imgui_util.combo_str(f"##{path}", value, all_bmsad_actordefs)
-            imgui_util.set_hovered_tooltip(value)
+
+            if imgui.begin_popup_context_item(f"{path}_context"):
+                if imgui.menu_item("Copy text")[0]:
+                    glfw.set_clipboard_string(glfw_window, value)
+                imgui.end_popup()
+            else:
+                imgui_util.set_hovered_tooltip(value)
+
             return result
         else:
             return type_render.render_string(value, path)
@@ -240,17 +248,18 @@ def loop():
     window = impl_glfw_init()
     impl = GlfwRenderer(window)
 
-    global current_level_data
+    global current_level_data, glfw_window
 
+    glfw_window = window
     load_preferences()
 
-    pkg_editor: Optional[PkgEditor] = None
+    pkg_editor: Optional[FileTreeEditor] = None
     current_error_message = None
     possible_brfld = []
 
     def load_romfs(path: Path):
         nonlocal pkg_editor, possible_brfld
-        pkg_editor = PkgEditor(path)
+        pkg_editor = FileTreeEditor(path)
         possible_brfld = [
             asset_name
             for asset_name in pkg_editor.all_asset_names()
@@ -315,6 +324,7 @@ def loop():
                         if current_level_data is not None:
                             current_level_data.apply_changes_to(pkg_editor)
                         pkg_editor.save_modified_pkgs()
+
 
                 imgui.end_menu()
 

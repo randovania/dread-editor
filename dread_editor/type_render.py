@@ -1,3 +1,4 @@
+import enum
 import typing
 
 import imgui
@@ -304,9 +305,8 @@ class TypeTreeRender:
 
             return changed, value
 
-    def render_enum_of_type(self, value: str, type_data: EnumType, path: str) -> tuple[bool, typing.Any]:
-        all_enum_values = list(type_data.values.keys())
-        changed, selected = imgui_util.combo_str("##" + path, value, all_enum_values)
+    def render_enum_of_type(self, value: enum.IntEnum, type_data: EnumType, path: str) -> tuple[bool, typing.Any]:
+        changed, selected = imgui_util.combo_enum("##" + path, value, type_data.enum_class())
         if changed:
             return True, selected
         else:

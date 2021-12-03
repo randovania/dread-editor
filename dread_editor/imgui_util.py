@@ -1,6 +1,11 @@
 import contextlib
+import enum
+import typing
 
 import imgui
+
+
+T = typing.TypeVar("T")
 
 
 @contextlib.contextmanager
@@ -49,5 +54,12 @@ def persistent_input_text(label: str, path: str, initial_value: str = "", max_si
 
 def combo_str(label: str, current: str, items: list[str], height_in_items: int = -1) -> tuple[bool, str]:
     changed, selected = imgui.combo(label, items.index(current), items, height_in_items)
+    selected = items[selected]
+    return changed, selected
+
+
+def combo_enum(label: str, current: T, enum_class: typing.Type[T], height_in_items: int = -1) -> tuple[bool, T]:
+    items: list[T] = list(enum_class)
+    changed, selected = imgui.combo(label, items.index(current), [x.name for x in items], height_in_items)
     selected = items[selected]
     return changed, selected

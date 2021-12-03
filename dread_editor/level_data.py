@@ -8,7 +8,8 @@ import typing
 import imgui
 from mercury_engine_data_structures import type_lib
 from mercury_engine_data_structures.formats import Brsa, Brfld, Bmscc
-from mercury_engine_data_structures.pkg_editor import PkgEditor
+from mercury_engine_data_structures.formats.dread_types import CActor
+from mercury_engine_data_structures.file_tree_editor import FileTreeEditor
 from mercury_engine_data_structures.type_lib import BaseType
 
 from dread_editor import imgui_util
@@ -16,7 +17,7 @@ from dread_editor.preferences import global_preferences, save_preferences
 from dread_editor.type_render import TypeTreeRender, SpecificTypeRender
 
 
-def get_subareas(pkg_editor: PkgEditor, brfld_path: str) -> set[str]:
+def get_subareas(pkg_editor: FileTreeEditor, brfld_path: str) -> set[str]:
     cams: set[str] = set()
 
     brsa = typing.cast(Brsa, pkg_editor.get_parsed_asset(brfld_path.replace(".brfld", ".brsa")))
@@ -51,12 +52,14 @@ class LevelData:
         for k in ["CGameLink<CActor>", "CGameLink<CEntity>"]:
             self.tree_render.specific_renders[k] = GameLinkRender(self)
 
+        self.tree_render.specific_renders["base::global::CRntFile"] = InnerValueRender(self)
+
         for layer_name in brfld.all_layers():
             if layer_name not in self.visible_layers:
                 self.visible_layers[layer_name] = True
 
     @classmethod
-    def open_file(cls, pkg_editor: PkgEditor, file_name: str):
+    def open_file(cls, pkg_editor: FileTreeEditor, file_name: str):
         brfld = typing.cast(Brfld, pkg_editor.get_parsed_asset(file_name))
 
         valid_cameras = {
@@ -346,10 +349,10 @@ class LevelData:
 
             imgui.end()
 
-    def apply_changes_to(self, pkg_editor: PkgEditor):
+    def apply_changes_to(self, pkg_editor: FileTreeEditor):
         pkg_editor.replace_asset(self.file_name, self.brfld.build())
         # for actor in self.brfld.all_actors():
-        #     bmsad = actor.oActorDefLink[len("actordef:"):]
+        #     bmsad = actor.oActorDefLink.removeprefix("actordef:")
         #
         #     for pkg_name in pkg_editor.find_pkgs(self.file_name):
         #         pkg_editor.ensure_present(pkg_name, bmsad)
@@ -392,3 +395,29 @@ class GameLinkRender(SpecificTypeRender):
             imgui.text(str(value))
         return False, None
 
+
+class InnerValueRender(SpecificTypeRender):
+    def __init__(self, level_data: LevelData):
+        self.level_data = level_data
+        self.cache = {}
+
+    def uses_one_column(self, type_data: BaseType):
+        return False
+
+    def create_default(self, type_data: BaseType):
+        return b""
+
+    def render_value(self, value: bytes, type_data: BaseType, path: str):
+        if path not in self.cache:
+            self.cache[path] = CActor.parse(value)
+
+        result = value
+        changed, new_actor = self.level_data.tree_render.render_value_of_type(
+            self.cache[path], type_lib.get_type("CActor"),
+            f"{path}.actor",
+        )
+        if changed:
+            self.cache[path] = new_actor
+            result = CActor.build(new_actor)
+
+        return changed, result
