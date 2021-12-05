@@ -1,4 +1,5 @@
 import logging
+import pprint
 import tkinter
 import tkinter.filedialog
 import typing
@@ -26,6 +27,7 @@ PathsByDirectory = dict[str, typing.Union[str, "PathsByDirectory"]]
 all_bmsad: list[str] = []
 nested_bmsad: PathsByDirectory = {}
 all_bmsad_actordefs: list[str] = []
+nested_all_files: PathsByDirectory = {}
 
 open_bmsad: dict[str, Bmsad] = {}
 glfw_window = None
@@ -243,6 +245,47 @@ def draw_open_bmsad(current_scale: float):
         imgui.end()
 
 
+def draw_file_browser(current_scale: float, pkg_editor: FileTreeEditor):
+    active = imgui.begin("File Browser", True)[1]
+    if not active:
+        imgui.end()
+        return False
+
+    current_tree = []
+
+    node_open = True
+    for file_name in sorted(pkg_editor.all_asset_names()):
+        name_tree = file_name.split("/")
+
+        for i, segment in enumerate(name_tree[:-1]):
+            while i < len(current_tree) and segment != current_tree[i]:
+                if node_open:
+                    imgui.tree_pop()
+                current_tree.pop()
+                node_open = True
+
+            if i >= len(current_tree):
+                if not node_open:
+                    break
+
+                node_open = imgui.tree_node(segment)
+                current_tree.append(segment)
+                if not node_open:
+                    break
+
+        if node_open:
+            imgui.text(name_tree[-1])
+
+    while current_tree:
+        if node_open:
+            imgui.tree_pop()
+        current_tree.pop()
+        node_open = True
+
+    imgui.end()
+    return True
+
+
 def loop():
     imgui.create_context()
     window = impl_glfw_init()
@@ -254,6 +297,7 @@ def loop():
     load_preferences()
 
     pkg_editor: Optional[FileTreeEditor] = None
+    file_browser_open = False
     current_error_message = None
     possible_brfld = []
 
@@ -315,6 +359,15 @@ def loop():
                         load_romfs(Path(f))
 
                 imgui.text_disabled(f'* Current root: {global_preferences.get("last_romfs")}')
+
+                if pkg_editor is None:
+                    imgui.text_disabled('Open file browser')
+                    file_browser_open = False
+                else:
+                    click, new_file_browser_state = imgui.menu_item("Open file browser", "", file_browser_open)
+                    if click:
+                        file_browser_open = new_file_browser_state
+
                 imgui.separator()
 
                 if imgui.menu_item("Save changes")[0]:
@@ -324,7 +377,6 @@ def loop():
                         if current_level_data is not None:
                             current_level_data.apply_changes_to(pkg_editor)
                         pkg_editor.save_modified_pkgs()
-
 
                 imgui.end_menu()
 
@@ -369,6 +421,8 @@ def loop():
             current_level_data.draw_visible_actors(current_scale)
 
         draw_open_bmsad(current_scale)
+        if file_browser_open:
+            file_browser_open = draw_file_browser(current_scale, pkg_editor)
 
         imgui.show_test_window()
 
