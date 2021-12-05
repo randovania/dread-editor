@@ -257,7 +257,6 @@ def loop():
 
     file_browser: Optional[FileBrowser] = None
     pkg_editor: Optional[FileTreeEditor] = None
-    file_browser_open = False
     current_error_message = None
     possible_brfld = []
 
@@ -284,7 +283,7 @@ def loop():
         all_bmsad_actordefs.clear()
         all_bmsad_actordefs.extend(f"actordef:{asset_name}" for asset_name in all_bmsad)
 
-        file_browser = FileBrowser(sorted(pkg_editor.all_asset_names()))
+        file_browser = FileBrowser(pkg_editor)
 
         global_preferences["last_romfs"] = str(path)
         save_preferences()
@@ -381,7 +380,7 @@ def loop():
 
         draw_open_bmsad(current_scale)
         if file_browser is not None and file_browser.is_open():
-            file_browser.draw(current_scale)
+            file_browser.draw(current_scale, open_bmsad)
 
         imgui.show_test_window()
 
