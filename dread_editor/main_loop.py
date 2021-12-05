@@ -1,5 +1,4 @@
 import logging
-import pprint
 import tkinter
 import tkinter.filedialog
 import typing
@@ -18,6 +17,7 @@ from mercury_engine_data_structures.file_tree_editor import FileTreeEditor
 from mercury_engine_data_structures.type_lib import BaseType
 
 from dread_editor import type_render, imgui_util
+from dread_editor.file_browser import FileBrowser
 from dread_editor.level_data import LevelData
 from dread_editor.preferences import global_preferences, load_preferences, save_preferences
 from dread_editor.type_render import SpecificTypeRender, TypeTreeRender
@@ -245,47 +245,6 @@ def draw_open_bmsad(current_scale: float):
         imgui.end()
 
 
-def draw_file_browser(current_scale: float, pkg_editor: FileTreeEditor):
-    active = imgui.begin("File Browser", True)[1]
-    if not active:
-        imgui.end()
-        return False
-
-    current_tree = []
-
-    node_open = True
-    for file_name in sorted(pkg_editor.all_asset_names()):
-        name_tree = file_name.split("/")
-
-        for i, segment in enumerate(name_tree[:-1]):
-            while i < len(current_tree) and segment != current_tree[i]:
-                if node_open:
-                    imgui.tree_pop()
-                current_tree.pop()
-                node_open = True
-
-            if i >= len(current_tree):
-                if not node_open:
-                    break
-
-                node_open = imgui.tree_node(segment)
-                current_tree.append(segment)
-                if not node_open:
-                    break
-
-        if node_open:
-            imgui.text(name_tree[-1])
-
-    while current_tree:
-        if node_open:
-            imgui.tree_pop()
-        current_tree.pop()
-        node_open = True
-
-    imgui.end()
-    return True
-
-
 def loop():
     imgui.create_context()
     window = impl_glfw_init()
@@ -296,13 +255,14 @@ def loop():
     glfw_window = window
     load_preferences()
 
+    file_browser: Optional[FileBrowser] = None
     pkg_editor: Optional[FileTreeEditor] = None
     file_browser_open = False
     current_error_message = None
     possible_brfld = []
 
     def load_romfs(path: Path):
-        nonlocal pkg_editor, possible_brfld
+        nonlocal pkg_editor, possible_brfld, file_browser
         pkg_editor = FileTreeEditor(path)
         possible_brfld = [
             asset_name
@@ -323,6 +283,8 @@ def loop():
 
         all_bmsad_actordefs.clear()
         all_bmsad_actordefs.extend(f"actordef:{asset_name}" for asset_name in all_bmsad)
+
+        file_browser = FileBrowser(sorted(pkg_editor.all_asset_names()))
 
         global_preferences["last_romfs"] = str(path)
         save_preferences()
@@ -360,13 +322,10 @@ def loop():
 
                 imgui.text_disabled(f'* Current root: {global_preferences.get("last_romfs")}')
 
-                if pkg_editor is None:
+                if file_browser is None:
                     imgui.text_disabled('Open file browser')
-                    file_browser_open = False
                 else:
-                    click, new_file_browser_state = imgui.menu_item("Open file browser", "", file_browser_open)
-                    if click:
-                        file_browser_open = new_file_browser_state
+                    file_browser.menu_item()
 
                 imgui.separator()
 
@@ -421,8 +380,8 @@ def loop():
             current_level_data.draw_visible_actors(current_scale)
 
         draw_open_bmsad(current_scale)
-        if file_browser_open:
-            file_browser_open = draw_file_browser(current_scale, pkg_editor)
+        if file_browser is not None and file_browser.is_open():
+            file_browser.draw(current_scale)
 
         imgui.show_test_window()
 
