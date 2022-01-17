@@ -144,7 +144,7 @@ class LevelData:
 
         def color_for_layer(name: str):
             d = hashlib.blake2b(name.encode("utf-8"), digest_size=4).digest()
-            d = struct.unpack("L", d)[0] / 0xFFFFFFFF
+            d = struct.unpack("=L", d)[0] / 0xFFFFFFFF
             r, g, b = colorsys.hsv_to_rgb(d, 1, 1)
             return [r, g, b, 1]
 
