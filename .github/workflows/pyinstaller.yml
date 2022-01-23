@@ -16,15 +16,15 @@ jobs:
       matrix:
         include:
 #          - os: 'ubuntu-latest'
-#            python: '3.9'
+#            python: '3.10'
 #            name: 'Linux'
 #
 #          - os: 'macos-latest'
-#            python: '3.9'
+#            python: '3.10'
 #            name: 'macOS'
 
           - os: 'windows-latest'
-            python: '3.9'
+            python: '3.10'
             name: 'Windows'
 
 
