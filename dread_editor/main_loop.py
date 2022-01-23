@@ -258,6 +258,7 @@ def loop():
     file_browser: Optional[FileBrowser] = None
     pkg_editor: Optional[FileTreeEditor] = None
     current_error_message = None
+    pending_load_last_romfs = True
     possible_brfld = []
 
     def load_romfs(path: Path):
@@ -287,14 +288,6 @@ def loop():
 
         global_preferences["last_romfs"] = str(path)
         save_preferences()
-
-    if global_preferences.get("last_romfs") is not None:
-        try:
-            load_romfs(Path(global_preferences["last_romfs"]))
-        except Exception as e:
-            logging.exception(f"Unable to re-open last romfs: {e}")
-            global_preferences["last_romfs"] = None
-            save_preferences()
 
     while not glfw.window_should_close(window):
         glfw.poll_events()
@@ -390,6 +383,15 @@ def loop():
         imgui.render()
         impl.render(imgui.get_draw_data())
         glfw.swap_buffers(window)
+
+        if pending_load_last_romfs and global_preferences.get("last_romfs") is not None:
+            pending_load_last_romfs = False
+            try:
+                load_romfs(Path(global_preferences["last_romfs"]))
+            except Exception as e:
+                logging.exception(f"Unable to re-open last romfs: {e}")
+                global_preferences["last_romfs"] = None
+                save_preferences()
 
     impl.shutdown()
     glfw.terminate()
