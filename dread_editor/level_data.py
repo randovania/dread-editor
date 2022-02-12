@@ -332,20 +332,17 @@ class LevelData:
 
             imgui.separator()
             imgui.text("Actor Groups")
-            link_for_actor = f"Root:pScenario:rEntitiesLayer:dctSublayers:{layer_name}:dctActors:{actor_name}"
 
             with imgui_util.with_child("##ActorGroups", 0, 300 * current_scale,
                                        imgui.WINDOW_ALWAYS_VERTICAL_SCROLLBAR):
-                actor_groups = typing.cast(dict[str, list[str]],
-                                           self.brfld.raw.Root.pScenario.rEntitiesLayer.dctActorGroups)
-                for group_name, group_elements in sorted(actor_groups.items(), key=lambda it: it[0]):
+                for group_name in sorted(self.brfld.all_actor_groups()):
                     changed, present = imgui.checkbox(f"{group_name} ##actor_group.{group_name}",
-                                                      link_for_actor in group_elements)
+                                                      self.brfld.is_actor_in_group(group_name, actor_name, layer_name))
                     if changed:
                         if present:
-                            group_elements.append(link_for_actor)
+                            self.brfld.add_actor_to_group(group_name, actor_name, layer_name)
                         else:
-                            group_elements.remove(link_for_actor)
+                            self.brfld.remove_actor_from_group(group_name, actor_name, layer_name)
 
             imgui.end()
 
