@@ -1,4 +1,4 @@
-construct==2.10.67
+construct==2.10.68
 glfw==2.5.0
 imgui==1.4.1
 mercury-engine-data-structures==0.10.1
