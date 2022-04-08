@@ -69,7 +69,7 @@ jobs:
           7z a -mx=7 -myx=7 dread_editor_${{ matrix.name }}.7z dread_editor
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: Dread Editor ${{ matrix.name }}
           if-no-files-found: error
