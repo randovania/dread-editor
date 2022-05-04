@@ -9,7 +9,7 @@ import OpenGL.GL as gl
 import glfw
 import imgui
 from imgui.integrations.glfw import GlfwRenderer
-from mercury_engine_data_structures.file_tree_editor import FileTreeEditor
+from mercury_engine_data_structures.file_tree_editor import FileTreeEditor, OutputFormat
 from mercury_engine_data_structures.type_lib import BaseType
 
 from dread_editor import type_render, imgui_util
@@ -227,7 +227,10 @@ def loop():
                     else:
                         if current_level_data is not None:
                             current_level_data.apply_changes_to(pkg_editor)
-                        pkg_editor.save_modified_pkgs()
+
+                        f = prompt_file(directory=True)
+                        if f:
+                            pkg_editor.save_modifications(Path(f), OutputFormat.PKG)
 
                 imgui.end_menu()
 
