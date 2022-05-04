@@ -21,8 +21,6 @@ from dread_editor.type_render import SpecificTypeRender, TypeTreeRender
 
 PathsByDirectory = dict[str, typing.Union[str, "PathsByDirectory"]]
 
-all_bmsad: list[str] = []
-nested_bmsad: PathsByDirectory = {}
 all_bmsad_actordefs: list[str] = []
 nested_all_files: PathsByDirectory = {}
 
@@ -175,16 +173,12 @@ def loop():
             if asset_name.endswith("brfld")
         ]
         possible_brfld.sort()
-        all_bmsad.clear()
-        all_bmsad.extend(
+        all_bmsad = [
             asset_name
             for asset_name in pkg_editor.all_asset_names()
             if asset_name.endswith("bmsad")
-        )
+        ]
         all_bmsad.sort()
-
-        nested_bmsad.clear()
-        nested_bmsad.update(split_directories(all_bmsad))
 
         all_bmsad_actordefs.clear()
         all_bmsad_actordefs.extend(f"actordef:{asset_name}" for asset_name in all_bmsad)
