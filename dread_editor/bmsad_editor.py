@@ -1,6 +1,7 @@
 import construct
 import imgui
 from mercury_engine_data_structures import type_lib
+from mercury_engine_data_structures.file_tree_editor import FileTreeEditor
 from mercury_engine_data_structures.formats import Bmsad
 from mercury_engine_data_structures.formats.bmsad import find_charclass_for_type
 
@@ -15,6 +16,12 @@ class BmsadEditor(FileEditor):
     def __init__(self, bmsad: Bmsad):
         self.bmsad = bmsad
         self.string_vector = type_lib.get_type("base::global::CRntVector<base::global::CStrId>")
+
+    def is_modified(self):
+        return False
+
+    def save_modifications(self, pkg_editor: FileTreeEditor, path: str):
+        pass
 
     def draw(self, current_scale: float):
 
@@ -41,7 +48,8 @@ class BmsadEditor(FileEditor):
         imgui.next_column()
         imgui.next_column()
         if node_open:
-            changed, new_field = bmsad_tree_render.render_value_of_type(prop.sub_actors, self.string_vector, "sub_actors")
+            changed, new_field = bmsad_tree_render.render_value_of_type(prop.sub_actors, self.string_vector,
+                                                                        "sub_actors")
             if changed:
                 prop.sub_actors = new_field
             imgui.tree_pop()

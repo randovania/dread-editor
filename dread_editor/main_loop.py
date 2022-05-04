@@ -24,7 +24,6 @@ PathsByDirectory = dict[str, typing.Union[str, "PathsByDirectory"]]
 all_bmsad_actordefs: list[str] = []
 nested_all_files: PathsByDirectory = {}
 
-open_editors: dict[str, FileEditor] = {}
 glfw_window = None
 
 
@@ -136,6 +135,13 @@ def split_directories(files: list[str]) -> PathsByDirectory:
     return clean_single_item_directory(result)
 
 
+def save_editors(open_editors: dict[str, FileEditor], pkg_editor: FileTreeEditor):
+    for path, editor in open_editors.items():
+        if editor.is_modified():
+            editor.save_modifications(pkg_editor, path)
+    pass
+
+
 def draw_open_editors(current_scale: float, open_editors: dict[str, FileEditor]):
     items = typing.cast(list[tuple[str, FileEditor]], list(open_editors.items()))
     for path, editor in items:
@@ -156,6 +162,7 @@ def loop():
 
     global current_level_data, glfw_window
 
+    open_editors: dict[str, FileEditor] = {}
     glfw_window = window
     load_preferences()
 
@@ -227,6 +234,7 @@ def loop():
                     else:
                         if current_level_data is not None:
                             current_level_data.apply_changes_to(pkg_editor)
+                        save_editors(open_editors, pkg_editor)
 
                         f = prompt_file(directory=True)
                         if f:
