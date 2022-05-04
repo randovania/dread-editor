@@ -1,11 +1,15 @@
 import typing
 
 import imgui
+from mercury_engine_data_structures import type_lib
 from mercury_engine_data_structures.file_tree_editor import FileTreeEditor
-from mercury_engine_data_structures.formats import Bmsad
+from mercury_engine_data_structures.formats import Bmsad, Bmmap
 
 from dread_editor.bmsad_editor import BmsadEditor
-from dread_editor.file_editor import FileEditor
+from dread_editor.file_editor import FileEditor, GenericEditor
+from dread_editor.type_render import TypeTreeRender
+
+tree_render = TypeTreeRender()
 
 
 class FileBrowser:
@@ -79,6 +83,14 @@ class FileBrowser:
                             if imgui.button("Open BMSAD"):
                                 open_editors[full_name] = BmsadEditor(
                                     self.tree_editor.get_parsed_asset(full_name, type_hint=Bmsad)
+                                )
+
+                        if name.endswith(".bmmap"):
+                            if imgui.button("Open BMMAP"):
+                                open_editors[full_name] = GenericEditor(
+                                    self.tree_editor.get_parsed_asset(full_name, type_hint=Bmmap),
+                                    tree_render,
+                                    type_lib.get_type('CMinimapData'),
                                 )
 
                         imgui.end_popup()

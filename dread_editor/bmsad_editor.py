@@ -107,4 +107,3 @@ class BmsadEditor(FileEditor):
         if imgui.tree_node("Raw"):
             imgui.text(str(self.bmsad.raw))
             imgui.tree_pop()
-        imgui.end()

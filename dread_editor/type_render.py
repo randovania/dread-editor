@@ -21,7 +21,11 @@ def render_float(value, path: str):
 
 
 def render_int(value, path: str):
-    return imgui.drag_int(f"##{path}", value)
+    try:
+        return imgui.drag_int(f"##{path}", value)
+    except OverflowError:
+        imgui.text(str(value))
+        return False, value
 
 
 def render_string(value, path: str):
@@ -74,6 +78,7 @@ PRIMITIVE_RENDERS = {
     PrimitiveKind.STRING: ExprSpecificTypeRender(lambda: True, lambda: "", render_string),
     PrimitiveKind.UINT: ExprSpecificTypeRender(lambda: True, lambda: 0, render_int),
     PrimitiveKind.BOOL: ExprSpecificTypeRender(lambda: True, lambda: False, render_bool),
+    PrimitiveKind.UINT_16: ExprSpecificTypeRender(lambda: True, lambda: 0, render_int),
     PrimitiveKind.UINT_64: ExprSpecificTypeRender(lambda: True, lambda: 0, render_int),
     PrimitiveKind.BYTES: ExprSpecificTypeRender(lambda: True, lambda: b"", render_unsupported_value),
     PrimitiveKind.PROPERTY: ExprSpecificTypeRender(lambda: True, lambda: 0, render_unsupported_value),
@@ -200,7 +205,7 @@ class TypeTreeRender:
 
         return self._render_container_of_type(
             value, type_lib.get_type(type_data.value_type), path,
-            imgui.TREE_NODE_DEFAULT_OPEN,
+            imgui.TREE_NODE_DEFAULT_OPEN if len(value) < 50 else 0,
             lambda v: enumerate(v),
             lambda k: f"Item {k}",
             new_item_prompt,

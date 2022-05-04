@@ -146,6 +146,7 @@ def draw_open_editors(current_scale: float, open_editors: dict[str, FileEditor])
             continue
 
         editor.draw(current_scale)
+        imgui.end()
 
 
 def loop():
