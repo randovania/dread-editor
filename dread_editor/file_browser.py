@@ -4,6 +4,9 @@ import imgui
 from mercury_engine_data_structures.file_tree_editor import FileTreeEditor
 from mercury_engine_data_structures.formats import Bmsad
 
+from dread_editor.bmsad_editor import BmsadEditor
+from dread_editor.file_editor import FileEditor
+
 
 class FileBrowser:
     _is_open: bool = False
@@ -30,7 +33,7 @@ class FileBrowser:
         if click:
             self._is_open = new_file_browser_state
 
-    def draw(self, current_scale: float, open_bmsad: dict[str, Bmsad]):
+    def draw(self, current_scale: float, open_editors: dict[str, FileEditor]):
         active = imgui.begin("File Browser", True)[1]
         if not active:
             imgui.end()
@@ -74,7 +77,9 @@ class FileBrowser:
 
                         if name.endswith(".bmsad"):
                             if imgui.button("Open BMSAD"):
-                                open_bmsad[full_name] = self.tree_editor.get_parsed_asset(full_name, type_hint=Bmsad)
+                                open_editors[full_name] = BmsadEditor(
+                                    self.tree_editor.get_parsed_asset(full_name, type_hint=Bmsad)
+                                )
 
                         imgui.end_popup()
 
