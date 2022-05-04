@@ -3,13 +3,29 @@ import typing
 import imgui
 from mercury_engine_data_structures import type_lib
 from mercury_engine_data_structures.file_tree_editor import FileTreeEditor
-from mercury_engine_data_structures.formats import Bmsad, Bmmap
+from mercury_engine_data_structures.formats import Bmsad
 
 from dread_editor.bmsad_editor import BmsadEditor
 from dread_editor.file_editor import FileEditor, GenericEditor
 from dread_editor.type_render import TypeTreeRender
 
 tree_render = TypeTreeRender()
+
+
+def create_editor_reader(type_name: str):
+    type_data = type_lib.get_type(type_name)
+    return lambda path, tree_editor: GenericEditor(
+        tree_editor.get_parsed_asset(path),
+        tree_render,
+        type_data,
+    )
+
+
+file_types = {
+    ".bmsad": lambda path, tree_editor: BmsadEditor(tree_editor.get_parsed_asset(path, type_hint=Bmsad)),
+    ".bmmap": create_editor_reader('CMinimapData'),
+    ".brsa": create_editor_reader("gameeditor::CGameModelRoot"),
+}
 
 
 class FileBrowser:
@@ -79,19 +95,10 @@ class FileBrowser:
                             full_path.parent.mkdir(parents=True, exist_ok=True)
                             full_path.write_bytes(self.tree_editor.get_raw_asset(full_name))
 
-                        if name.endswith(".bmsad"):
-                            if imgui.button("Open BMSAD"):
-                                open_editors[full_name] = BmsadEditor(
-                                    self.tree_editor.get_parsed_asset(full_name, type_hint=Bmsad)
-                                )
-
-                        if name.endswith(".bmmap"):
-                            if imgui.button("Open BMMAP"):
-                                open_editors[full_name] = GenericEditor(
-                                    self.tree_editor.get_parsed_asset(full_name, type_hint=Bmmap),
-                                    tree_render,
-                                    type_lib.get_type('CMinimapData'),
-                                )
+                        for extension, build in file_types.items():
+                            if name.endswith(extension):
+                                if imgui.button("Open"):
+                                    open_editors[full_name] = build(full_name, self.tree_editor)
 
                         imgui.end_popup()
 
