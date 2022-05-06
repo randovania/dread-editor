@@ -317,6 +317,16 @@ class TypeTreeRender:
         else:
             return False, value
 
+    def render_flagset_of_type(self, value: dict, type_data: FlagsetType, path: str) -> tuple[bool, typing.Any]:
+        enum_data = type_lib.get_type(type_data.enum)
+        assert isinstance(enum_data, EnumType)
+
+        changed, selected = imgui_util.combo_flagset(path, value, enum_data.enum_class())
+        if changed:
+            return True, selected
+        else:
+            return False, value
+
     def render_struct_of_type(self, value, type_data: StructType, path: str) -> tuple[bool, typing.Any]:
         modified = False
 
@@ -357,7 +367,10 @@ class TypeTreeRender:
 
                 imgui.next_column()
             else:
-                node_open = imgui.tree_node(f"{field_name} ##{field_path}", imgui.TREE_NODE_DEFAULT_OPEN)
+                node_open = imgui.tree_node(f"{field_name} ##{field_path}",
+                                            imgui.TREE_NODE_DEFAULT_OPEN
+                                            if self.should_default_to_open(field_value, field_type_data, field_path)
+                                            else 0)
                 imgui_util.set_hovered_tooltip(tooltip)
 
                 imgui.next_column()
@@ -386,9 +399,7 @@ class TypeTreeRender:
             return self.render_enum_of_type(value, type_data, path)
 
         elif isinstance(type_data, FlagsetType):
-            enum_data = type_lib.get_type(type_data.enum)
-            assert isinstance(enum_data, EnumType)
-            return self.render_enum_of_type(value, enum_data, path)
+            return self.render_flagset_of_type(value, type_data, path)
 
         elif isinstance(type_data, TypedefType):
             raise ValueError(f"Unexpected typedef type: {type_data}")
@@ -404,3 +415,9 @@ class TypeTreeRender:
 
         else:
             raise ValueError(f"Unknown type_data: {type_data}")
+
+    def should_default_to_open(self, value, type_data: BaseType, path: str) -> bool:
+        if isinstance(type_data, VectorType):
+            assert isinstance(value, list)
+            return len(value) < 50
+        return True

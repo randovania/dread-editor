@@ -1,9 +1,7 @@
 import contextlib
-import enum
 import typing
 
 import imgui
-
 
 T = typing.TypeVar("T")
 
@@ -62,4 +60,25 @@ def combo_enum(label: str, current: T, enum_class: typing.Type[T], height_in_ite
     items: list[T] = list(enum_class)
     changed, selected = imgui.combo(label, items.index(current), [x.name for x in items], height_in_items)
     selected = items[selected]
+    return changed, selected
+
+
+def combo_flagset(label: str, current: dict[T, bool], enum_class: typing.Type[T]) -> tuple[bool, T]:
+    changed, selected = False, current
+
+    if imgui.button(f"Select flags ##{label}"):
+        imgui.open_popup(label)
+
+    if imgui.begin_popup_modal(label)[0]:
+        for i, item in enumerate(enum_class):
+            item_changed, new_item = imgui.checkbox(f"{item.name} ##{label}.item_{i}", current[item.name])
+            if item_changed:
+                current[item.name] = new_item
+            changed = changed or item_changed
+
+        if imgui.button(f"Close ##{label}"):
+            imgui.close_current_popup()
+
+        imgui.end_popup()
+
     return changed, selected
