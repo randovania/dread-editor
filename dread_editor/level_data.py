@@ -7,12 +7,13 @@ import typing
 
 import imgui
 from mercury_engine_data_structures import type_lib
+from mercury_engine_data_structures.file_tree_editor import FileTreeEditor
 from mercury_engine_data_structures.formats import Brsa, Brfld, Bmscc
 from mercury_engine_data_structures.formats.dread_types import CActor
-from mercury_engine_data_structures.file_tree_editor import FileTreeEditor
 from mercury_engine_data_structures.type_lib import BaseType
 
 from dread_editor import imgui_util
+from dread_editor.actor_filter import ActorFilter
 from dread_editor.preferences import global_preferences, save_preferences
 from dread_editor.type_render import TypeTreeRender, SpecificTypeRender
 
@@ -45,7 +46,7 @@ class LevelData:
         self.valid_cameras = valid_cameras
         self.display_borders = display_borders
         self.highlighted_actors_in_canvas = []
-        self.current_actor_filter = ""
+        self.actor_filter = ActorFilter()
         self.copy_actor_name = ""
 
         self.tree_render = TypeTreeRender()
@@ -154,7 +155,7 @@ class LevelData:
             imgui.text("Actor Layers")
             with imgui_util.with_child("##ActorLayers", 300 * current_scale, 0,
                                        imgui.WINDOW_ALWAYS_VERTICAL_SCROLLBAR):
-                self.update_actor_filter()
+                self.actor_filter.draw()
                 imgui.columns(2, "actor layers")
                 imgui.set_column_width(-1, 20 * current_scale)
                 for layer_name in self.brfld.raw.Root.pScenario.rEntitiesLayer.dctSublayers:
@@ -169,7 +170,7 @@ class LevelData:
 
                         for actor_name, actor in sorted(actors.items(), key=lambda it: it[0]):
                             key = (layer_name, actor_name)
-                            if not self.passes_actor_filter(actor_name):
+                            if not self.actor_filter.passes(actor):
                                 continue
 
                             def do_item():
@@ -353,24 +354,6 @@ class LevelData:
         #
         #     for pkg_name in pkg_editor.find_pkgs(self.file_name):
         #         pkg_editor.ensure_present(pkg_name, bmsad)
-
-    def update_actor_filter(self):
-        self.current_actor_filter = imgui.input_text("Filter", self.current_actor_filter, 500)[1]
-
-    def passes_actor_filter(self, actor_name: str) -> bool:
-        if not self.current_actor_filter:
-            return True
-
-        for criteria in self.current_actor_filter.split(","):
-            criteria = criteria.strip()
-            if criteria[0] == "-":
-                if criteria[1:] in actor_name:
-                    return False
-            else:
-                if criteria not in actor_name:
-                    return False
-
-        return True
 
 
 class GameLinkRender(SpecificTypeRender):
