@@ -24,6 +24,7 @@ def create_editor_reader(type_name: str):
 file_types = {
     ".bmsad": lambda path, tree_editor: BmsadEditor(tree_editor.get_parsed_asset(path, type_hint=Bmsad)),
     ".bmmap": create_editor_reader('CMinimapData'),
+    ".bmscu": create_editor_reader('CCutSceneDef'),
     ".brsa": create_editor_reader("gameeditor::CGameModelRoot"),
 }
 
