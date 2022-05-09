@@ -155,7 +155,7 @@ class LevelData:
             imgui.text("Actor Layers")
             with imgui_util.with_child("##ActorLayers", 300 * current_scale, 0,
                                        imgui.WINDOW_ALWAYS_VERTICAL_SCROLLBAR):
-                self.actor_filter.draw()
+                self.actor_filter.draw(current_scale)
                 imgui.columns(2, "actor layers")
                 imgui.set_column_width(-1, 20 * current_scale)
                 for layer_name in self.brfld.raw.Root.pScenario.rEntitiesLayer.dctSublayers:
