@@ -64,14 +64,26 @@ class BmsadEditor(FileEditor):
                         imgui.next_column()
 
                         # Fields
-                        if component.fields is not None and imgui_util.tree_node_with_column(
-                                f"Fields ##{component_key}_fields", imgui.TREE_NODE_DEFAULT_OPEN):
+                        if imgui_util.tree_node_with_column(f"Fields ##{component_key}_fields",
+                                                            imgui.TREE_NODE_DEFAULT_OPEN):
+
+                            if component.fields is not None:
+                                fields = component.fields.fields
+                            else:
+                                fields = construct.Container()
+
                             changed, new_field = bmsad_tree_render.render_value_of_type(
-                                component.fields.fields,
+                                fields,
                                 type_lib.get_type(find_charclass_for_type(component.type)),
                                 f"{component_key}"
                             )
                             if changed:
+                                if component.fields is None:
+                                    component.fields = construct.Container(
+                                        empty_string="",
+                                        root="Root",
+                                        fields=new_field,
+                                    )
                                 component.fields.fields = new_field
                             imgui.tree_pop()
 
