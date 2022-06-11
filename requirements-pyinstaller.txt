@@ -1,6 +1,6 @@
 altgraph==0.17.2
 future==0.18.2
-pefile==2021.9.3
+pefile==2022.5.30
 pyinstaller==5.1
 pyinstaller-hooks-contrib==2022.7
 pywin32-ctypes==0.2.0
