@@ -246,6 +246,7 @@ class LevelData:
                         self.display_borders["bottom"] - self.display_borders["top"])
                 return ly * actual_scale + canvas_po.y
 
+            # Draw Camera/Rooms
             for entry in self.bmscc.raw.layers[0].entries:
                 if not self.valid_cameras.get(entry.name):
                     continue
@@ -284,6 +285,23 @@ class LevelData:
 
                     if (mouse.x - final_x) ** 2 + (mouse.y - final_y) ** 2 < 5 * 5:
                         self.highlighted_actors_in_canvas.append((layer_name, actor))
+
+                    if ("LOGICSHAPE" in actor.pComponents
+                            and actor.pComponents.LOGICSHAPE["@type"] == 'CLogicShapeComponent'):
+                        shape = actor.pComponents.LOGICSHAPE.pLogicShape
+                        if shape is not None and shape["@type"] == 'game::logic::collision::CPolygonCollectionShape':
+                            for poly in shape.oPolyCollection.vPolys:
+                                vertices = []
+                                for p in poly.oSegmentData:
+                                    vertices.append(
+                                        (lerp_x(p.vPos[0] + actor.vPos[0]),
+                                         lerp_y(p.vPos[1] + actor.vPos[1]))
+                                    )
+                                draw_list.add_polyline(
+                                    vertices, color,
+                                    closed=poly.bClosed,
+                                    thickness=3,
+                                )
 
             if self.highlighted_actors_in_canvas and imgui.is_window_hovered():
                 imgui.begin_tooltip()
