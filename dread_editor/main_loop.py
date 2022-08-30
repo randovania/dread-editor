@@ -1,4 +1,5 @@
 import logging
+import time
 import tkinter
 import tkinter.filedialog
 import typing
@@ -174,7 +175,10 @@ def loop():
 
     def load_romfs(path: Path):
         nonlocal pkg_editor, possible_brfld, file_browser
+        start_time = time.time()
         pkg_editor = FileTreeEditor(path)
+        print("Time to create FileTreeEditor: {:.03f}s".format(time.time() - start_time))
+
         possible_brfld = [
             asset_name
             for asset_name in pkg_editor.all_asset_names()
@@ -195,6 +199,7 @@ def loop():
 
         global_preferences["last_romfs"] = str(path)
         save_preferences()
+        print("Time for load_romfs: {:.03f}s".format(time.time() - start_time))
 
     while not glfw.window_should_close(window):
         glfw.poll_events()
