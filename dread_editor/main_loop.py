@@ -9,7 +9,7 @@ import OpenGL.GL as gl
 import glfw
 import imgui
 from imgui.integrations.glfw import GlfwRenderer
-from mercury_engine_data_structures.file_tree_editor import FileTreeEditor, OutputFormat
+from mercury_engine_data_structures.file_tree_editor import FileTreeEditor, OutputFormat, Game
 from mercury_engine_data_structures.type_lib import BaseType
 
 from dread_editor import type_render, imgui_util
@@ -174,7 +174,7 @@ def loop():
 
     def load_romfs(path: Path):
         nonlocal pkg_editor, possible_brfld, file_browser
-        pkg_editor = FileTreeEditor(path)
+        pkg_editor = FileTreeEditor(path, Game.DREAD)
         possible_brfld = [
             asset_name
             for asset_name in pkg_editor.all_asset_names()
