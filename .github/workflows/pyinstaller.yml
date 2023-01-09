@@ -77,7 +77,7 @@ jobs:
             dist/dread_editor_${{ matrix.name }}.7z
 
       - name: Upload binaries to release
-        uses: svenstaro/upload-release-action@2.3.0
+        uses: svenstaro/upload-release-action@2.4.0
         if: ${{ startsWith(github.ref, 'refs/tags/v') }}
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
