@@ -1,31 +1,39 @@
 import typing
 
 import imgui
-from mercury_engine_data_structures import type_lib
-from mercury_engine_data_structures.file_tree_editor import FileTreeEditor
+from mercury_engine_data_structures.type_lib import TypeLib
+from mercury_engine_data_structures.file_tree_editor import FileTreeEditor, Game
 from mercury_engine_data_structures.formats import Bmsad
 
 from dread_editor.bmsad_editor import BmsadEditor
 from dread_editor.file_editor import FileEditor, GenericEditor
 from dread_editor.type_render import TypeTreeRender
 
-tree_render = TypeTreeRender()
-
 
 def create_editor_reader(type_name: str):
-    type_data = type_lib.get_type(type_name)
+    type_lib = TypeLib(Game.DREAD)
+    type_data = type_lib.get_type( type_name)
     return lambda path, tree_editor: GenericEditor(
         tree_editor.get_parsed_asset(path),
-        tree_render,
+        TypeTreeRender(type_lib),
         type_data,
     )
 
 
-file_types = {
+file_types_dread = {
     ".bmsad": lambda path, tree_editor: BmsadEditor(tree_editor.get_parsed_asset(path, type_hint=Bmsad)),
     ".bmmap": create_editor_reader('CMinimapData'),
     ".bmscu": create_editor_reader('CCutSceneDef'),
     ".brsa": create_editor_reader("gameeditor::CGameModelRoot"),
+}
+
+file_types_sr = {
+    ".bmsad": lambda path, tree_editor: BmsadEditor(tree_editor.get_parsed_asset(path, type_hint=Bmsad)),
+}
+
+file_types = {
+    Game.SAMUS_RETURNS: file_types_sr,
+    Game.DREAD: file_types_dread
 }
 
 
@@ -33,9 +41,10 @@ class FileBrowser:
     _is_open: bool = False
     filter: str = ""
 
-    def __init__(self, tree_editor: FileTreeEditor):
+    def __init__(self, tree_editor: FileTreeEditor, game: Game):
         self.tree_editor = tree_editor
         self.all_files_tree = {}
+        self.game = game
 
         for asset_name in sorted(tree_editor.all_asset_names()):
             name_tree = asset_name.split("/")
@@ -96,7 +105,7 @@ class FileBrowser:
                             full_path.parent.mkdir(parents=True, exist_ok=True)
                             full_path.write_bytes(self.tree_editor.get_raw_asset(full_name))
 
-                        for extension, build in file_types.items():
+                        for extension, build in file_types.get(self.game).items():
                             if name.endswith(extension):
                                 if imgui.button("Open"):
                                     open_editors[full_name] = build(full_name, self.tree_editor)

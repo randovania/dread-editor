@@ -6,14 +6,15 @@ import struct
 import typing
 
 import imgui
-from mercury_engine_data_structures import type_lib
-from mercury_engine_data_structures.file_tree_editor import FileTreeEditor
+from mercury_engine_data_structures.type_lib import TypeLib 
+from mercury_engine_data_structures.file_tree_editor import FileTreeEditor, Game
 from mercury_engine_data_structures.formats import Brsa, Brfld, Bmscc
 from mercury_engine_data_structures.formats.dread_types import CActor
 from mercury_engine_data_structures.type_lib import BaseType
 
 from dread_editor import imgui_util
 from dread_editor.actor_filter import ActorFilter
+from dread_editor.level_data_common import GameLinkRender, LevelData
 from dread_editor.preferences import global_preferences, save_preferences
 from dread_editor.type_render import TypeTreeRender, SpecificTypeRender
 
@@ -31,7 +32,7 @@ def get_subareas(pkg_editor: FileTreeEditor, brfld_path: str) -> set[str]:
     return cams
 
 
-class LevelData:
+class LevelDataDread(LevelData):
     def __init__(self, file_name: str, brfld: Brfld, bmscc: Bmscc, valid_cameras: dict[str, bool],
                  display_borders: dict[str, float]):
 
@@ -48,8 +49,9 @@ class LevelData:
         self.highlighted_actors_in_canvas = []
         self.actor_filter = ActorFilter()
         self.copy_actor_name = ""
+        self.type_lib = TypeLib(Game.DREAD)
 
-        self.tree_render = TypeTreeRender()
+        self.tree_render = TypeTreeRender(self.type_lib)
         for k in ["CGameLink<CActor>", "CGameLink<CEntity>"]:
             self.tree_render.specific_renders[k] = GameLinkRender(self)
 
@@ -326,7 +328,7 @@ class LevelData:
             actor = self.brfld.actors_for_layer(layer_name)[actor_name]
             imgui.columns(2, "actor details")
             self.tree_render.render_value_of_type(
-                actor, type_lib.get_type(actor["@type"]),
+                actor, type_lib.get_type(Game.DREAD, actor["@type"]),
                 f"{self.file_name}.{layer_name}.{actor_name}",
             )
             imgui.columns(1, "actor details")
@@ -356,28 +358,9 @@ class LevelData:
         #         pkg_editor.ensure_present(pkg_name, bmsad)
 
 
-class GameLinkRender(SpecificTypeRender):
-    def __init__(self, level_data: LevelData):
-        self.level_data = level_data
-
-    def uses_one_column(self, type_data: BaseType):
-        return True
-
-    def create_default(self, type_data: BaseType):
-        return "<EMPTY>"
-
-    def render_value(self, value: typing.Any, type_data: BaseType, path: str):
-        if isinstance(value, str) and value.startswith("Root"):
-            if imgui.button(value):
-                self.level_data.open_actor_link(value)
-            imgui_util.set_hovered_tooltip(value)
-        else:
-            imgui.text(str(value))
-        return False, None
-
 
 class InnerValueRender(SpecificTypeRender):
-    def __init__(self, level_data: LevelData):
+    def __init__(self, level_data: LevelDataDread):
         self.level_data = level_data
         self.cache = {}
 
@@ -393,7 +376,7 @@ class InnerValueRender(SpecificTypeRender):
 
         result = value
         changed, new_actor = self.level_data.tree_render.render_value_of_type(
-            self.cache[path], type_lib.get_type("CActor"),
+            self.cache[path], self.level_data.type_lib.get_type("CActor"),
             f"{path}.actor",
         )
         if changed:

@@ -15,7 +15,9 @@ from mercury_engine_data_structures.type_lib import BaseType
 from dread_editor import type_render, imgui_util
 from dread_editor.file_browser import FileBrowser
 from dread_editor.file_editor import FileEditor
-from dread_editor.level_data import LevelData
+from dread_editor.level_data_common import LevelData
+from dread_editor.level_data_dread import LevelDataDread
+from dread_editor.level_data_sr import LevelDataSR
 from dread_editor.preferences import global_preferences, load_preferences, save_preferences
 from dread_editor.type_render import SpecificTypeRender, TypeTreeRender
 
@@ -169,18 +171,21 @@ def loop():
     file_browser: Optional[FileBrowser] = None
     pkg_editor: Optional[FileTreeEditor] = None
     current_error_message = None
+    current_game = None
     pending_load_last_romfs = True
-    possible_brfld = []
+    # brfld (dread) or bmsld (samus returns)
+    possible_level_files = []
 
     def load_romfs(path: Path):
-        nonlocal pkg_editor, possible_brfld, file_browser
-        pkg_editor = FileTreeEditor(path, Game.DREAD)
-        possible_brfld = [
+        nonlocal pkg_editor, possible_level_files, file_browser
+        pkg_editor = FileTreeEditor(path, current_game)
+        level_file_name = "bmsld" if current_game == Game.SAMUS_RETURNS else "brfld"
+        possible_level_files = [
             asset_name
             for asset_name in pkg_editor.all_asset_names()
-            if asset_name.endswith("brfld")
+            if asset_name.endswith(level_file_name)
         ]
-        possible_brfld.sort()
+        possible_level_files.sort()
         all_bmsad = [
             asset_name
             for asset_name in pkg_editor.all_asset_names()
@@ -191,9 +196,10 @@ def loop():
         all_bmsad_actordefs.clear()
         all_bmsad_actordefs.extend(f"actordef:{asset_name}" for asset_name in all_bmsad)
 
-        file_browser = FileBrowser(pkg_editor)
+        file_browser = FileBrowser(pkg_editor, current_game)
 
         global_preferences["last_romfs"] = str(path)
+        global_preferences["last_game"] = current_game.value
         save_preferences()
 
     while not glfw.window_should_close(window):
@@ -217,6 +223,12 @@ def loop():
                 if imgui.menu_item("Select extracted Metroid Dread root")[0]:
                     f = prompt_file(directory=True)
                     if f:
+                        current_game = Game.DREAD
+                        load_romfs(Path(f))
+                if imgui.menu_item("Select extracted Samus Returns root")[0]:
+                    f = prompt_file(directory=True)
+                    if f:
+                        current_game = Game.SAMUS_RETURNS
                         load_romfs(Path(f))
 
                 imgui.text_disabled(f'* Current root: {global_preferences.get("last_romfs")}')
@@ -242,14 +254,14 @@ def loop():
 
                 imgui.end_menu()
 
-            if imgui.begin_menu("Select level file", len(possible_brfld) > 0):
+            if imgui.begin_menu("Select level file", len(possible_level_files) > 0):
                 current_file_name = None
                 if current_level_data is not None:
                     current_file_name = current_level_data.file_name
 
-                for name in possible_brfld:
+                for name in possible_level_files:
                     if imgui.menu_item(name, "", name == current_file_name)[0]:
-                        current_level_data = LevelData.open_file(pkg_editor, name)
+                        current_level_data = LevelDataSR.open_file(pkg_editor, name) if current_game == Game.SAMUS_RETURNS else LevelDataDread.open_file(pkg_editor, name)
                         add_custom_type_renders(current_level_data.tree_render)
 
                 imgui.end_menu()
@@ -276,13 +288,15 @@ def loop():
         impl.render(imgui.get_draw_data())
         glfw.swap_buffers(window)
 
-        if pending_load_last_romfs and global_preferences.get("last_romfs") is not None:
+        if pending_load_last_romfs and global_preferences.get("last_romfs") and global_preferences.get("last_game") is not None:
             pending_load_last_romfs = False
             try:
+                current_game = Game(global_preferences["last_game"])
                 load_romfs(Path(global_preferences["last_romfs"]))
             except Exception as e:
                 logging.exception(f"Unable to re-open last romfs: {e}")
                 global_preferences["last_romfs"] = None
+                global_preferences["last_game"] = None
                 save_preferences()
 
     impl.shutdown()

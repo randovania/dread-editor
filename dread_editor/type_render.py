@@ -2,12 +2,12 @@ import enum
 import typing
 
 import imgui
-from mercury_engine_data_structures import type_lib
 from mercury_engine_data_structures.type_lib import (
     TypeKind, VectorType, DictionaryType, PointerType,
     EnumType, StructType, PrimitiveType, PrimitiveKind,
-    TypedefType, FlagsetType, BaseType
+    TypedefType, FlagsetType, BaseType, TypeLib
 )
+from mercury_engine_data_structures.file_tree_editor import Game
 
 from dread_editor import imgui_util
 
@@ -29,7 +29,7 @@ def render_int(value, path: str):
 
 
 def render_string(value, path: str):
-    return imgui.input_text(f"##{path}", value, 500)
+    return imgui.input_text(f"##{path}", str(value), 500)
 
 
 def render_float_vector(value, path: str):
@@ -88,10 +88,11 @@ PRIMITIVE_RENDERS = {
 class TypeTreeRender:
     specific_renders: dict[str, SpecificTypeRender]
 
-    def __init__(self):
+    def __init__(self, type_lib: TypeLib):
         self._debug_once = set()
         self.memory = {}
         self.specific_renders = {}
+        self.type_lib = type_lib
 
     def print_once(self, path, msg):
         if path not in self._debug_once:
@@ -204,7 +205,7 @@ class TypeTreeRender:
             return imgui.button("New Item"), value.append
 
         return self._render_container_of_type(
-            value, type_lib.get_type(type_data.value_type), path,
+            value, self.type_lib.get_type(type_data.value_type), path,
             imgui.TREE_NODE_DEFAULT_OPEN if len(value) < 50 else 0,
             lambda v: enumerate(v),
             lambda k: f"Item {k}",
@@ -213,7 +214,7 @@ class TypeTreeRender:
         )
 
     def render_dict_of_type(self, value: dict, type_data: DictionaryType, path: str):
-        key_type = type_lib.get_type(type_data.key_type)
+        key_type = self.type_lib.get_type(type_data.key_type)
 
         if isinstance(key_type, PrimitiveType) and key_type.primitive_kind == PrimitiveKind.STRING:
             def new_item_prompt():
@@ -226,7 +227,7 @@ class TypeTreeRender:
                 return imgui.button("New Item"), item_add
 
             return self._render_container_of_type(
-                value, type_lib.get_type(type_data.value_type), path,
+                value, self.type_lib.get_type(type_data.value_type), path,
                 0,
                 lambda v: v.items(),
                 lambda k: k,
@@ -240,7 +241,7 @@ class TypeTreeRender:
             return False, value
 
     def render_ptr_of_type(self, value, type_data: PointerType, path: str):
-        all_options = sorted(type_lib.get_all_children_for(type_data.target))
+        all_options = sorted(self.type_lib.get_all_children_for(type_data.target))
         all_options.insert(0, "None")
 
         value_type_name: str
@@ -264,7 +265,7 @@ class TypeTreeRender:
             if value_type_name == "None":
                 return None
             else:
-                return self.create_default_of_type(type_lib.get_type(value_type_name))
+                return self.create_default_of_type(self.type_lib.get_type(value_type_name))
 
         # TODO: this check doesn't make sense
         if self.type_uses_one_column(type_data):
@@ -284,7 +285,7 @@ class TypeTreeRender:
             if value_type_name == "None":
                 imgui.text("None")
             else:
-                value_type_data = type_lib.get_type(value_type_name)
+                value_type_data = self.type_lib.get_type(value_type_name)
                 if not self.type_uses_one_column(value_type_data):
                     imgui.text(f"Expected type {value_type_name} to use one column")
                 else:
@@ -304,7 +305,7 @@ class TypeTreeRender:
                 value = create_default(value_type_name)
 
             if value_type_name != "None":
-                value_type_data = type_lib.get_type(value_type_name)
+                value_type_data = self.type_lib.get_type(value_type_name)
                 value_changed, value = self.render_value_of_type(value, value_type_data, f"{path}.Deref")
                 changed = changed or value_changed
 
@@ -318,7 +319,7 @@ class TypeTreeRender:
             return False, value
 
     def render_flagset_of_type(self, value: dict, type_data: FlagsetType, path: str) -> tuple[bool, typing.Any]:
-        enum_data = type_lib.get_type(type_data.enum)
+        enum_data = self.type_lib.get_type(type_data.enum)
         assert isinstance(enum_data, EnumType)
 
         changed, selected = imgui_util.combo_flagset(path, value, enum_data.enum_class())
@@ -331,12 +332,12 @@ class TypeTreeRender:
         modified = False
 
         if type_data.parent is not None:
-            parent = type_lib.get_type(type_data.parent)
+            parent = self.type_lib.get_type(type_data.parent)
             assert isinstance(parent, StructType)
             modified, value = self.render_struct_of_type(value, parent, path)
 
         for field_name, field_type in type_data.fields.items():
-            field_type_data = type_lib.get_type(field_type)
+            field_type_data = self.type_lib.get_type(field_type)
 
             field_path = f"{path}.{field_name}"
             tooltip = f"Field of class {type_data.name} of type {field_type_data.name}."
