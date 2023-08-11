@@ -1,7 +1,7 @@
 import construct
 import imgui
-from mercury_engine_data_structures.type_lib import TypeLib
-from mercury_engine_data_structures.file_tree_editor import FileTreeEditor, Game
+from mercury_engine_data_structures.type_lib_instances import get_type_lib_dread
+from mercury_engine_data_structures.file_tree_editor import FileTreeEditor
 from mercury_engine_data_structures.formats import Bmsad
 from mercury_engine_data_structures.formats.bmsad import find_charclass_for_type
 
@@ -14,7 +14,7 @@ from dread_editor.type_render import TypeTreeRender
 class BmsadEditor(FileEditor):
     def __init__(self, bmsad: Bmsad):
         self.bmsad = bmsad
-        self.type_lib = TypeLib(Game.DREAD)
+        self.type_lib = get_type_lib_dread()
         self.bmsad_tree_render = TypeTreeRender(self.type_lib)
         self.string_vector = self.type_lib.get_type("base::global::CRntVector<base::global::CStrId>")
 

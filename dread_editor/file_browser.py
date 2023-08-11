@@ -1,7 +1,7 @@
 import typing
 
 import imgui
-from mercury_engine_data_structures.type_lib import TypeLib
+from mercury_engine_data_structures.type_lib_instances import get_type_lib_dread
 from mercury_engine_data_structures.file_tree_editor import FileTreeEditor, Game
 from mercury_engine_data_structures.formats import Bmsad
 
@@ -11,7 +11,7 @@ from dread_editor.type_render import TypeTreeRender
 
 
 def create_editor_reader(type_name: str):
-    type_lib = TypeLib(Game.DREAD)
+    type_lib = get_type_lib_dread()
     type_data = type_lib.get_type( type_name)
     return lambda path, tree_editor: GenericEditor(
         tree_editor.get_parsed_asset(path),

@@ -6,7 +6,7 @@ import struct
 import typing
 
 import imgui
-from mercury_engine_data_structures.type_lib import TypeLib 
+from mercury_engine_data_structures.type_lib_instances import get_type_lib_dread
 from mercury_engine_data_structures.file_tree_editor import FileTreeEditor, Game
 from mercury_engine_data_structures.formats import Brsa, Brfld, Bmscc
 from mercury_engine_data_structures.formats.dread_types import CActor
@@ -49,7 +49,7 @@ class LevelDataDread(LevelData):
         self.highlighted_actors_in_canvas = []
         self.actor_filter = ActorFilter()
         self.copy_actor_name = ""
-        self.type_lib = TypeLib(Game.DREAD)
+        self.type_lib = get_type_lib_dread()
 
         self.tree_render = TypeTreeRender(self.type_lib)
         for k in ["CGameLink<CActor>", "CGameLink<CEntity>"]:
@@ -328,7 +328,7 @@ class LevelDataDread(LevelData):
             actor = self.brfld.actors_for_layer(layer_name)[actor_name]
             imgui.columns(2, "actor details")
             self.tree_render.render_value_of_type(
-                actor, type_lib.get_type(Game.DREAD, actor["@type"]),
+                actor, self.type_lib.get_type(actor["@type"]),
                 f"{self.file_name}.{layer_name}.{actor_name}",
             )
             imgui.columns(1, "actor details")

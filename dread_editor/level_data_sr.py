@@ -10,7 +10,7 @@ from mercury_engine_data_structures.file_tree_editor import FileTreeEditor, Game
 from mercury_engine_data_structures.formats import Bmscc, Bmsld
 from mercury_engine_data_structures.formats.bmsld import ProperActor
 from mercury_engine_data_structures.type_lib import BaseType
-from mercury_engine_data_structures.type_lib import TypeLib 
+from mercury_engine_data_structures.type_lib_instances import get_type_lib_samus_returns
 
 from dread_editor import imgui_util
 from dread_editor.actor_filter import ActorFilter
@@ -47,7 +47,7 @@ class LevelDataSR(LevelData):
         self.highlighted_actors_in_canvas = []
         self.actor_filter = ActorFilter()
         self.copy_actor_name = ""
-        self.type_lib = TypeLib(Game.SAMUS_RETURNS)
+        self.type_lib = get_type_lib_samus_returns()
 
         self.tree_render = TypeTreeRender(self.type_lib)
         for k in ["CGameLink<ProperActor>", "CGameLink<CEntity>"]:
