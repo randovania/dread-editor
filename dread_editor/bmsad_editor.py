@@ -1,6 +1,6 @@
 import construct
 import imgui
-from mercury_engine_data_structures.type_lib_instances import get_type_lib_dread
+from mercury_engine_data_structures.type_lib import get_type_lib_dread
 from mercury_engine_data_structures.file_tree_editor import FileTreeEditor
 from mercury_engine_data_structures.formats import Bmsad
 from mercury_engine_data_structures.formats.bmsad import find_charclass_for_type

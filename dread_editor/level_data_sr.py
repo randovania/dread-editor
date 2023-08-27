@@ -9,8 +9,7 @@ import imgui
 from mercury_engine_data_structures.file_tree_editor import FileTreeEditor, Game
 from mercury_engine_data_structures.formats import Bmscc, Bmsld
 from mercury_engine_data_structures.formats.bmsld import ProperActor
-from mercury_engine_data_structures.type_lib import BaseType
-from mercury_engine_data_structures.type_lib_instances import get_type_lib_samus_returns
+from mercury_engine_data_structures.type_lib import BaseType, get_type_lib_samus_returns
 
 from dread_editor import imgui_util
 from dread_editor.actor_filter import ActorFilter
@@ -257,11 +256,11 @@ class LevelDataSR(LevelData):
                 ]
                 if highlighted_section == entry.name:
                     draw_list.add_polyline(raw_vertices, imgui.get_color_u32_rgba(0.2, 0.8, 1, 1.0),
-                                           closed=True,
+                                           flags=imgui.DRAW_CLOSED,
                                            thickness=5)
                 else:
                     draw_list.add_polyline(raw_vertices, imgui.get_color_u32_rgba(0.2, 0.2, 1, 0.8),
-                                           closed=True,
+                                           flags=imgui.DRAW_CLOSED,
                                            thickness=3)
 
             self.highlighted_actors_in_canvas = []
