@@ -101,14 +101,13 @@ class LevelDataSR(LevelData):
             print(actor)
             self.visible_actors[(layer_name, actor.sName)] = True
 
-    def render_actor_context_menu(self, layer_name: str, actor):
+    def render_actor_context_menu(self, layer_index: int, actor):
         if self.copy_actor_name is None:
             self.copy_actor_name = f"{actor.sName}_Copy"
 
         if imgui.button("Duplicate Actor"):
             new_actor = copy.deepcopy(actor)
-            new_actor.sName = self.copy_actor_name
-            self.add_new_actor(layer_name, new_actor)
+            self.add_new_actor(layer_index, new_actor, self.copy_actor_name)
             imgui.close_current_popup()
             self.copy_actor_name = None
 
@@ -121,18 +120,20 @@ class LevelDataSR(LevelData):
 
         imgui.text("Position:")
         imgui.same_line()
-        changed_x, x = imgui.slider_float("##actor-context-position-x", actor.vPos[0],
+        changed_x, x = imgui.slider_float("##actor-context-position-x", actor.x,
                                           self.display_borders["left"], self.display_borders["right"])
         imgui.same_line()
-        changed_y, y = imgui.slider_float("##actor-context-position-y", actor.vPos[1],
+        changed_y, y = imgui.slider_float("##actor-context-position-y", actor.y,
                                           self.display_borders["top"], self.display_borders["bottom"])
-        if changed_x or changed_y:
-            actor.vPos = (x, y, actor.vPos[2])
+        if changed_x:
+            actor.x = x
+        if changed_y:
+            actor.y = y
 
-    def add_new_actor(self, layer_name: str, actor):
+    def add_new_actor(self, layer_index: int, actor, actor_name: str):
         if actor is not None:
-            self.bmsld.actors_for_layer(layer_name)[actor.sName] = actor
-            self.visible_actors[(layer_name, actor.sName)] = True
+            self.bmsld.raw.actors[layer_index][actor_name] = actor
+            self.visible_actors[(str(layer_index), actor_name)] = True
 
     def render_window(self, current_scale):
         imgui.set_next_window_size(900 * current_scale, 300 * current_scale, imgui.FIRST_USE_EVER)
@@ -168,7 +169,7 @@ class LevelDataSR(LevelData):
                     if imgui_util.colored_tree_node(layer_name, color_for_layer(layer_name)):
                         actors = self.bmsld.raw.actors[int(layer_name)]
 
-                        for actor_name, actor in actors.items():
+                        for actor_name, actor in sorted(actors.items(), key=lambda it: it[0]):
                             key = (layer_name, actor_name)
                             if not self.actor_filter.passes(actor):
                                 continue
@@ -188,7 +189,7 @@ class LevelDataSR(LevelData):
                                 highlighted_actors_in_list.add(key)
 
                             if imgui.begin_popup_context_item():
-                                self.render_actor_context_menu(layer_name, actor)
+                                self.render_actor_context_menu(layer_index, actor)
                                 imgui.end_popup()
 
                         imgui.tree_pop()
@@ -339,9 +340,9 @@ class LevelDataSR(LevelData):
 
             with imgui_util.with_child("##ActorGroups", 0, 300 * current_scale,
                                        imgui.WINDOW_ALWAYS_VERTICAL_SCROLLBAR):
-                for group_name in sorted(self.bmsld.all_actor_groups()):
+                for group_name, group in sorted(self.bmsld.all_actor_groups()):
                     changed, present = imgui.checkbox(f"{group_name} ##actor_group.{group_name}",
-                                                      self.bmsld.is_actor_in_group(group_name, actor_name, layer_name))
+                                                      self.bmsld.is_actor_in_group(group_name, actor_name))
                     # if changed:
                     #     if present:
                     #         self.bmsld.add_actor_to_group(group_name, actor_name, layer_name)

@@ -223,11 +223,13 @@ def loop():
                 if imgui.menu_item("Select extracted Metroid Dread root")[0]:
                     f = prompt_file(directory=True)
                     if f:
+                        current_level_data = None
                         current_game = Game.DREAD
                         load_romfs(Path(f))
                 if imgui.menu_item("Select extracted Samus Returns root")[0]:
                     f = prompt_file(directory=True)
                     if f:
+                        current_level_data = None
                         current_game = Game.SAMUS_RETURNS
                         load_romfs(Path(f))
 
@@ -250,7 +252,7 @@ def loop():
 
                         f = prompt_file(directory=True)
                         if f:
-                            pkg_editor.save_modifications(Path(f), OutputFormat.PKG)
+                            pkg_editor.save_modifications(Path(f), OutputFormat.PKG, finalize_editor=False)
 
                 imgui.end_menu()
 
