@@ -6,33 +6,31 @@ import struct
 import typing
 
 import imgui
-from mercury_engine_data_structures import type_lib
-from mercury_engine_data_structures.file_tree_editor import FileTreeEditor
-from mercury_engine_data_structures.formats import Brsa, Brfld, Bmscc
-from mercury_engine_data_structures.formats.dread_types import CActor
-from mercury_engine_data_structures.type_lib import BaseType
+from mercury_engine_data_structures.file_tree_editor import FileTreeEditor, Game
+from mercury_engine_data_structures.formats import Bmscc, Bmsld
+from mercury_engine_data_structures.formats.bmsld import ProperActor
+from mercury_engine_data_structures.type_lib import BaseType, get_type_lib_samus_returns
 
 from dread_editor import imgui_util
 from dread_editor.actor_filter import ActorFilter
+from dread_editor.level_data_common import GameLinkRender, LevelData
 from dread_editor.preferences import global_preferences, save_preferences
 from dread_editor.type_render import TypeTreeRender, SpecificTypeRender
 
 
-def get_subareas(pkg_editor: FileTreeEditor, brfld_path: str) -> set[str]:
+def get_subareas(pkg_editor: FileTreeEditor, bmsld_path: str) -> set[str]:
     cams: set[str] = set()
 
-    brsa = typing.cast(Brsa, pkg_editor.get_parsed_asset(brfld_path.replace(".brfld", ".brsa")))
+    bmscc = typing.cast(Bmscc, pkg_editor.get_parsed_asset(bmsld_path.replace(".bmsld", ".bmscc")))
 
-    for setup in brsa.raw.Root.pSubareaManager.vSubareaSetups:
-        for config in setup.vSubareaConfigs:
-            for cam in config.vsCameraCollisionsIds:
-                cams.add(cam)
+    for subarea in bmscc.raw.layers[0].entries:
+        cams.add(subarea.name)
 
     return cams
 
 
-class LevelData:
-    def __init__(self, file_name: str, brfld: Brfld, bmscc: Bmscc, valid_cameras: dict[str, bool],
+class LevelDataSR(LevelData):
+    def __init__(self, file_name: str, bmsld: Bmsld, bmscc: Bmscc, valid_cameras: dict[str, bool],
                  display_borders: dict[str, float]):
 
         self.preferences = global_preferences.get(file_name, {})
@@ -40,7 +38,7 @@ class LevelData:
         self.preferences["layers"] = self.preferences.get("layers", {})
 
         self.file_name = file_name
-        self.brfld = brfld
+        self.bmsld = bmsld
         self.bmscc = bmscc
         self.visible_actors = {}
         self.valid_cameras = valid_cameras
@@ -48,26 +46,27 @@ class LevelData:
         self.highlighted_actors_in_canvas = []
         self.actor_filter = ActorFilter()
         self.copy_actor_name = ""
+        self.type_lib = get_type_lib_samus_returns()
 
-        self.tree_render = TypeTreeRender()
-        for k in ["CGameLink<CActor>", "CGameLink<CEntity>"]:
+        self.tree_render = TypeTreeRender(self.type_lib)
+        for k in ["CGameLink<ProperActor>", "CGameLink<CEntity>"]:
             self.tree_render.specific_renders[k] = GameLinkRender(self)
 
-        self.tree_render.specific_renders["base::global::CRntFile"] = InnerValueRender(self)
+        self.tree_render.specific_renders["base::global::CRntFile"] = InnerValueRenderSR(self)
 
-        for layer_name in brfld.all_layers():
-            if layer_name not in self.visible_layers:
-                self.visible_layers[layer_name] = True
+        for layer_index in range(len(bmsld.raw.actors)):
+            if layer_index not in self.visible_layers:
+                self.visible_layers[str(layer_index)] = True
 
     @classmethod
     def open_file(cls, pkg_editor: FileTreeEditor, file_name: str):
-        brfld = typing.cast(Brfld, pkg_editor.get_parsed_asset(file_name))
+        bmsld = typing.cast(Bmsld, pkg_editor.get_parsed_asset(file_name))
 
         valid_cameras = {
             key: True
             for key in sorted(get_subareas(pkg_editor, file_name))
         }
-        bmscc = typing.cast(Bmscc, pkg_editor.get_parsed_asset(file_name.replace(".brfld", ".bmscc")))
+        bmscc = typing.cast(Bmscc, pkg_editor.get_parsed_asset(file_name.replace(".bmsld", ".bmscc")))
 
         display_borders: dict[str, float] = {"left": 0, "right": 0, "top": 0, "bottom": 0}
         for entry in bmscc.raw.layers[0].entries:
@@ -81,7 +80,7 @@ class LevelData:
             display_borders["right"] = max(display_borders["right"], x2)
             display_borders["top"] = max(display_borders["top"], y2)
 
-        return cls(file_name, brfld, bmscc, valid_cameras, display_borders)
+        return cls(file_name, bmsld, bmscc, valid_cameras, display_borders)
 
     @property
     def visible_layers(self) -> dict[str, bool]:
@@ -97,19 +96,18 @@ class LevelData:
         save_preferences()
 
     def open_actor_link(self, link: str):
-        if (actor := self.brfld.follow_link(link)) is not None:
+        if (actor := self.bmsld.follow_link(link)) is not None:
             layer_name = link.split(":")[4]
             print(actor)
             self.visible_actors[(layer_name, actor.sName)] = True
 
-    def render_actor_context_menu(self, layer_name: str, actor):
+    def render_actor_context_menu(self, layer_index: int, actor):
         if self.copy_actor_name is None:
             self.copy_actor_name = f"{actor.sName}_Copy"
 
         if imgui.button("Duplicate Actor"):
             new_actor = copy.deepcopy(actor)
-            new_actor.sName = self.copy_actor_name
-            self.add_new_actor(layer_name, new_actor)
+            self.add_new_actor(layer_index, new_actor, self.copy_actor_name)
             imgui.close_current_popup()
             self.copy_actor_name = None
 
@@ -122,18 +120,20 @@ class LevelData:
 
         imgui.text("Position:")
         imgui.same_line()
-        changed_x, x = imgui.slider_float("##actor-context-position-x", actor.vPos[0],
+        changed_x, x = imgui.slider_float("##actor-context-position-x", actor.x,
                                           self.display_borders["left"], self.display_borders["right"])
         imgui.same_line()
-        changed_y, y = imgui.slider_float("##actor-context-position-y", actor.vPos[1],
+        changed_y, y = imgui.slider_float("##actor-context-position-y", actor.y,
                                           self.display_borders["top"], self.display_borders["bottom"])
-        if changed_x or changed_y:
-            actor.vPos = (x, y, actor.vPos[2])
+        if changed_x:
+            actor.x = x
+        if changed_y:
+            actor.y = y
 
-    def add_new_actor(self, layer_name: str, actor):
+    def add_new_actor(self, layer_index: int, actor, actor_name: str):
         if actor is not None:
-            self.brfld.actors_for_layer(layer_name)[actor.sName] = actor
-            self.visible_actors[(layer_name, actor.sName)] = True
+            self.bmsld.raw.actors[layer_index][actor_name] = actor
+            self.visible_actors[(str(layer_index), actor_name)] = True
 
     def render_window(self, current_scale):
         imgui.set_next_window_size(900 * current_scale, 300 * current_scale, imgui.FIRST_USE_EVER)
@@ -158,7 +158,8 @@ class LevelData:
                 self.actor_filter.draw(current_scale)
                 imgui.columns(2, "actor layers")
                 imgui.set_column_width(-1, 20 * current_scale)
-                for layer_name in self.brfld.raw.Root.pScenario.rEntitiesLayer.dctSublayers:
+                for layer_index in range(len(self.bmsld.raw.actors)):
+                    layer_name = str(layer_index)
                     changed, self.visible_layers[layer_name] = imgui.checkbox(f"##{layer_name}_visible",
                                                                               self.visible_layers[layer_name])
                     if changed:
@@ -166,7 +167,7 @@ class LevelData:
 
                     imgui.next_column()
                     if imgui_util.colored_tree_node(layer_name, color_for_layer(layer_name)):
-                        actors = self.brfld.actors_for_layer(layer_name)
+                        actors = self.bmsld.raw.actors[int(layer_name)]
 
                         for actor_name, actor in sorted(actors.items(), key=lambda it: it[0]):
                             key = (layer_name, actor_name)
@@ -188,7 +189,7 @@ class LevelData:
                                 highlighted_actors_in_list.add(key)
 
                             if imgui.begin_popup_context_item():
-                                self.render_actor_context_menu(layer_name, actor)
+                                self.render_actor_context_menu(layer_index, actor)
                                 imgui.end_popup()
 
                         imgui.tree_pop()
@@ -256,56 +257,59 @@ class LevelData:
                 ]
                 if highlighted_section == entry.name:
                     draw_list.add_polyline(raw_vertices, imgui.get_color_u32_rgba(0.2, 0.8, 1, 1.0),
-                                           closed=True,
+                                           flags=imgui.DRAW_CLOSED,
                                            thickness=5)
                 else:
                     draw_list.add_polyline(raw_vertices, imgui.get_color_u32_rgba(0.2, 0.2, 1, 0.8),
-                                           closed=True,
+                                           flags=imgui.DRAW_CLOSED,
                                            thickness=3)
 
             self.highlighted_actors_in_canvas = []
 
-            for layer_name in self.brfld.all_layers():
+            for layer_index in range(len(self.bmsld.raw.actors)):
+                layer_name = str(layer_index)
                 if not self.visible_layers[layer_name]:
                     continue
 
                 color = imgui.get_color_u32_rgba(*color_for_layer(layer_name))
-                for actor in self.brfld.actors_for_layer(layer_name).values():
-                    if "vPos" not in actor:
+                for actor_name in self.bmsld.raw.actors[layer_index]:
+                    actor = self.bmsld.raw.actors[layer_index][actor_name]
+                    if "x" not in actor:
                         # TODO: vPos might be a required field. Re-visit after editor fields
                         continue
 
-                    final_x = lerp_x(actor.vPos[0])
-                    final_y = lerp_y(actor.vPos[1])
-                    if (layer_name, actor.sName) in highlighted_actors_in_list:
+                    final_x = lerp_x(actor.x)
+                    final_y = lerp_y(actor.y)
+                    if (layer_name, actor_name) in highlighted_actors_in_list:
                         draw_list.add_circle_filled(final_x, final_y, 15, imgui.get_color_u32_rgba(1, 1, 1, 1))
                     else:
                         draw_list.add_circle_filled(final_x, final_y, 5, color)
 
                     if (mouse.x - final_x) ** 2 + (mouse.y - final_y) ** 2 < 5 * 5:
-                        self.highlighted_actors_in_canvas.append((layer_name, actor))
+                        self.highlighted_actors_in_canvas.append((layer_name, actor_name))
 
             if self.highlighted_actors_in_canvas and imgui.is_window_hovered():
                 imgui.begin_tooltip()
-                for layer_name, actor in self.highlighted_actors_in_canvas:
-                    imgui.text(f"{layer_name} - {actor.sName}")
+                for layer_name, actor_name in self.highlighted_actors_in_canvas:
+                    imgui.text(f"{layer_name} - {actor_name}")
                     if imgui.is_mouse_double_clicked(0):
-                        self.visible_actors[(layer_name, actor.sName)] = True
+                        self.visible_actors[(layer_name, actor_name)] = True
                 imgui.end_tooltip()
 
                 if len(self.highlighted_actors_in_canvas) == 1:
-                    layer_name, actor = self.highlighted_actors_in_canvas[0]
+                    layer_name, actor_name = self.highlighted_actors_in_canvas[0]
                     if imgui.is_mouse_released(1):
-                        print("OPEN THE POPUP!", f"canvas_actor_context_{layer_name}_{actor.sName}")
-                        imgui.open_popup(f"canvas_actor_context_{layer_name}_{actor.sName}")
+                        print("OPEN THE POPUP!", f"canvas_actor_context_{layer_name}_{actor_name}")
+                        imgui.open_popup(f"canvas_actor_context_{layer_name}_{actor_name}")
 
-            for layer_name in self.brfld.all_layers():
-                for actor in list(self.brfld.actors_for_layer(layer_name).values()):
-                    if imgui.begin_popup(f"canvas_actor_context_{layer_name}_{actor.sName}",
-                                         imgui.WINDOW_ALWAYS_AUTO_RESIZE | imgui.WINDOW_NO_TITLE_BAR |
-                                         imgui.WINDOW_NO_SAVED_SETTINGS):
-                        self.render_actor_context_menu(layer_name, actor)
-                        imgui.end_popup()
+            # for sub_areas in self.bmsld.raw.sub_areas:
+            #     layer_name = sub_areas.name
+            #     for actor in list(self.bmsld.actors_for_layer(layer_name).values()):
+            #         if imgui.begin_popup(f"canvas_actor_context_{layer_name}_{actor.sName}",
+            #                              imgui.WINDOW_ALWAYS_AUTO_RESIZE | imgui.WINDOW_NO_TITLE_BAR |
+            #                              imgui.WINDOW_NO_SAVED_SETTINGS):
+            #             self.render_actor_context_menu(layer_name, actor)
+            #             imgui.end_popup()
 
         imgui.end()
         return True
@@ -323,10 +327,10 @@ class LevelData:
                 imgui.end()
                 continue
 
-            actor = self.brfld.actors_for_layer(layer_name)[actor_name]
+            actor = self.bmsld.raw.actors[int(layer_name)][actor_name]
             imgui.columns(2, "actor details")
             self.tree_render.render_value_of_type(
-                actor, type_lib.get_type(actor["@type"]),
+                actor, self.type_lib.get_type("ProperActor"),
                 f"{self.file_name}.{layer_name}.{actor_name}",
             )
             imgui.columns(1, "actor details")
@@ -336,48 +340,27 @@ class LevelData:
 
             with imgui_util.with_child("##ActorGroups", 0, 300 * current_scale,
                                        imgui.WINDOW_ALWAYS_VERTICAL_SCROLLBAR):
-                for group_name in sorted(self.brfld.all_actor_groups()):
+                for group_name, group in sorted(self.bmsld.all_actor_groups()):
                     changed, present = imgui.checkbox(f"{group_name} ##actor_group.{group_name}",
-                                                      self.brfld.is_actor_in_group(group_name, actor_name, layer_name))
-                    if changed:
-                        if present:
-                            self.brfld.add_actor_to_group(group_name, actor_name, layer_name)
-                        else:
-                            self.brfld.remove_actor_from_group(group_name, actor_name, layer_name)
+                                                      self.bmsld.is_actor_in_group(group_name, actor_name))
+                    # if changed:
+                    #     if present:
+                    #         self.bmsld.add_actor_to_group(group_name, actor_name, layer_name)
+                    #     else:
+                    #         self.bmsld.remove_actor_from_group(group_name, actor_name, layer_name)
 
             imgui.end()
 
     def apply_changes_to(self, pkg_editor: FileTreeEditor):
-        pkg_editor.replace_asset(self.file_name, self.brfld.build())
-        # for actor in self.brfld.all_actors():
+        pkg_editor.replace_asset(self.file_name, self.bmsld.build())
+        # for actor in self.bmsld.all_actors():
         #     bmsad = actor.oActorDefLink.removeprefix("actordef:")
         #
         #     for pkg_name in pkg_editor.find_pkgs(self.file_name):
         #         pkg_editor.ensure_present(pkg_name, bmsad)
 
-
-class GameLinkRender(SpecificTypeRender):
-    def __init__(self, level_data: LevelData):
-        self.level_data = level_data
-
-    def uses_one_column(self, type_data: BaseType):
-        return True
-
-    def create_default(self, type_data: BaseType):
-        return "<EMPTY>"
-
-    def render_value(self, value: typing.Any, type_data: BaseType, path: str):
-        if isinstance(value, str) and value.startswith("Root"):
-            if imgui.button(value):
-                self.level_data.open_actor_link(value)
-            imgui_util.set_hovered_tooltip(value)
-        else:
-            imgui.text(str(value))
-        return False, None
-
-
-class InnerValueRender(SpecificTypeRender):
-    def __init__(self, level_data: LevelData):
+class InnerValueRenderSR(SpecificTypeRender):
+    def __init__(self, level_data: LevelDataSR):
         self.level_data = level_data
         self.cache = {}
 
@@ -389,15 +372,15 @@ class InnerValueRender(SpecificTypeRender):
 
     def render_value(self, value: bytes, type_data: BaseType, path: str):
         if path not in self.cache:
-            self.cache[path] = CActor.parse(value)
+            self.cache[path] = ProperActor.parse(value)
 
         result = value
         changed, new_actor = self.level_data.tree_render.render_value_of_type(
-            self.cache[path], type_lib.get_type("CActor"),
+            self.cache[path], self.level_data.type_lib.get_type("ProperActor"),
             f"{path}.actor",
         )
         if changed:
             self.cache[path] = new_actor
-            result = CActor.build(new_actor)
+            result = ProperActor.build(new_actor)
 
         return changed, result

@@ -1,6 +1,6 @@
 import construct
 import imgui
-from mercury_engine_data_structures import type_lib
+from mercury_engine_data_structures.type_lib import get_type_lib_dread
 from mercury_engine_data_structures.file_tree_editor import FileTreeEditor
 from mercury_engine_data_structures.formats import Bmsad
 from mercury_engine_data_structures.formats.bmsad import find_charclass_for_type
@@ -9,13 +9,14 @@ from dread_editor import imgui_util
 from dread_editor.file_editor import FileEditor
 from dread_editor.type_render import TypeTreeRender
 
-bmsad_tree_render = TypeTreeRender()
 
-
+# TODO: Implement it for SR if we support it
 class BmsadEditor(FileEditor):
     def __init__(self, bmsad: Bmsad):
         self.bmsad = bmsad
-        self.string_vector = type_lib.get_type("base::global::CRntVector<base::global::CStrId>")
+        self.type_lib = get_type_lib_dread()
+        self.bmsad_tree_render = TypeTreeRender(self.type_lib)
+        self.string_vector = self.type_lib.get_type("base::global::CRntVector<base::global::CStrId>")
 
     def is_modified(self):
         return False
@@ -48,7 +49,7 @@ class BmsadEditor(FileEditor):
         imgui.next_column()
         imgui.next_column()
         if node_open:
-            changed, new_field = bmsad_tree_render.render_value_of_type(prop.sub_actors, self.string_vector,
+            changed, new_field = self.bmsad_tree_render.render_value_of_type(prop.sub_actors, self.string_vector,
                                                                         "sub_actors")
             if changed:
                 prop.sub_actors = new_field
@@ -66,9 +67,9 @@ class BmsadEditor(FileEditor):
                         # Fields
                         if component.fields is not None and imgui_util.tree_node_with_column(
                                 f"Fields ##{component_key}_fields", imgui.TREE_NODE_DEFAULT_OPEN):
-                            changed, new_field = bmsad_tree_render.render_value_of_type(
+                            changed, new_field = self.bmsad_tree_render.render_value_of_type(
                                 component.fields.fields,
-                                type_lib.get_type(find_charclass_for_type(component.type)),
+                                self.type_lib.get_type(find_charclass_for_type(component.type)),
                                 f"{component_key}"
                             )
                             if changed:
