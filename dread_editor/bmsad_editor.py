@@ -38,21 +38,21 @@ class BmsadEditor(FileEditor):
         imgui.next_column()
 
         imgui.separator()
-        prop = self.bmsad.raw.property
+        prop = self.bmsad.raw
 
         imgui.text("Model Name")
         imgui.next_column()
-        imgui.text(prop.model_name)
+        imgui.text(prop.header.model_name)
         imgui.next_column()
 
         node_open = imgui.tree_node("Sub Actors", imgui.TREE_NODE_DEFAULT_OPEN)
         imgui.next_column()
         imgui.next_column()
         if node_open:
-            changed, new_field = self.bmsad_tree_render.render_value_of_type(prop.sub_actors, self.string_vector,
+            changed, new_field = self.bmsad_tree_render.render_value_of_type(prop.header.sub_actors, self.string_vector,
                                                                         "sub_actors")
             if changed:
-                prop.sub_actors = new_field
+                prop.header.sub_actors = new_field
             imgui.tree_pop()
 
         if imgui_util.tree_node_with_column("Components", imgui.TREE_NODE_DEFAULT_OPEN):
