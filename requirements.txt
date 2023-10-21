@@ -1,5 +1,5 @@
 construct==2.10.68
 glfw==2.6.2
 imgui==2.0.0
-mercury-engine-data-structures==0.24.0
+mercury-engine-data-structures==0.25.0
 PyOpenGL==3.1.7
