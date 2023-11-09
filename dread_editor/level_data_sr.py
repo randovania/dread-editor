@@ -98,7 +98,6 @@ class LevelDataSR(LevelData):
     def open_actor_link(self, link: str):
         if (actor := self.bmsld.follow_link(link)) is not None:
             layer_name = link.split(":")[4]
-            print(actor)
             self.visible_actors[(layer_name, actor.sName)] = True
 
     def render_actor_context_menu(self, layer_index: int, actor):
@@ -120,15 +119,13 @@ class LevelDataSR(LevelData):
 
         imgui.text("Position:")
         imgui.same_line()
-        changed_x, x = imgui.slider_float("##actor-context-position-x", actor.x,
+        changed_x, x = imgui.slider_float("##actor-context-position-x", actor.positon[0],
                                           self.display_borders["left"], self.display_borders["right"])
         imgui.same_line()
-        changed_y, y = imgui.slider_float("##actor-context-position-y", actor.y,
+        changed_y, y = imgui.slider_float("##actor-context-position-y", actor.positon[1],
                                           self.display_borders["top"], self.display_borders["bottom"])
-        if changed_x:
-            actor.x = x
-        if changed_y:
-            actor.y = y
+        if changed_x or changed_y:
+            actor.positon = (x, y, actor.positon[2])
 
     def add_new_actor(self, layer_index: int, actor, actor_name: str):
         if actor is not None:
@@ -274,12 +271,12 @@ class LevelDataSR(LevelData):
                 color = imgui.get_color_u32_rgba(*color_for_layer(layer_name))
                 for actor_name in self.bmsld.raw.actors[layer_index]:
                     actor = self.bmsld.raw.actors[layer_index][actor_name]
-                    if "x" not in actor:
+                    if "position" not in actor:
                         # TODO: vPos might be a required field. Re-visit after editor fields
                         continue
 
-                    final_x = lerp_x(actor.x)
-                    final_y = lerp_y(actor.y)
+                    final_x = lerp_x(actor.position[0])
+                    final_y = lerp_y(actor.position[1])
                     if (layer_name, actor_name) in highlighted_actors_in_list:
                         draw_list.add_circle_filled(final_x, final_y, 15, imgui.get_color_u32_rgba(1, 1, 1, 1))
                     else:
