@@ -1,6 +1,7 @@
 import colorsys
 import copy
 import hashlib
+import math
 import os
 import struct
 import typing
@@ -289,7 +290,54 @@ class LevelData:
                     if ("LOGICSHAPE" in actor.pComponents
                             and actor.pComponents.LOGICSHAPE["@type"] == 'CLogicShapeComponent'):
                         shape = actor.pComponents.LOGICSHAPE.pLogicShape
-                        if shape is not None and shape["@type"] == 'game::logic::collision::CPolygonCollectionShape':
+
+                        
+                        if shape is not None and shape["@type"] == 'game::logic::collision::CAABoxShape2D':
+                            try:
+                                draw_list.add_rect(
+                                        lerp_x(shape.v2Min[0] + actor.vPos[0]),
+                                        lerp_y(shape.v2Min[1] + actor.vPos[1]),
+                                        lerp_x(shape.v2Max[0] + actor.vPos[0]),
+                                        lerp_y(shape.v2Max[1] + actor.vPos[1]),
+                                        color,
+                                        thickness=3,
+                                    )
+                            except AttributeError:
+                                pass
+                        elif shape is not None and shape["@type"] == 'game::logic::collision::CCircleShape2D':
+                            try:
+                                draw_list.add_circle(
+                                        lerp_x(actor.vPos[0]),
+                                        lerp_y(actor.vPos[1]),
+                                        shape.fRadius,
+                                        color,
+                                        num_segments=32,
+                                        thickness=3,
+                                    )
+                            except AttributeError:
+                                pass
+                        elif shape is not None and shape["@type"] == 'game::logic::collision::COBoxShape2D':
+                            try:
+                                angleSin = math.sin(shape.fDegrees)
+                                angleCos = math.cos(shape.fDegrees)
+                                draw_list.add_polyline(
+                                        [
+                                            (lerp_x((shape.v2Extent[0] * -1 * angleCos) - (shape.v2Extent[1] * angleSin) + actor.vPos[0]),
+                                            lerp_y((shape.v2Extent[0] * -1 * angleSin) + (shape.v2Extent[1] * angleCos) + actor.vPos[1])),
+                                            (lerp_x((shape.v2Extent[0] * angleCos) - (shape.v2Extent[1] * angleSin) + actor.vPos[0]),
+                                            lerp_y((shape.v2Extent[0] * angleSin) + (shape.v2Extent[1] * angleCos) + actor.vPos[1])),
+                                            (lerp_x((shape.v2Extent[0] * angleCos) - (shape.v2Extent[1] * -1 * angleSin) + actor.vPos[0]),
+                                            lerp_y((shape.v2Extent[0] * angleSin) + (shape.v2Extent[1] * -1 * angleCos) + actor.vPos[1])),
+                                            (lerp_x((shape.v2Extent[0] * -1 * angleCos) - (shape.v2Extent[1] * -1 * angleSin) + actor.vPos[0]),
+                                            lerp_y((shape.v2Extent[0] * -1 * angleSin) + (shape.v2Extent[1] * -1 * angleCos) + actor.vPos[1]))
+                                        ],
+                                        color,
+                                        closed=poly.bClosed,
+                                        thickness=3,
+                                    )
+                            except AttributeError:
+                                pass
+                        elif shape is not None and shape["@type"] == 'game::logic::collision::CPolygonCollectionShape':
                             try:
                                 for poly in shape.oPolyCollection.vPolys:
                                     vertices = []
